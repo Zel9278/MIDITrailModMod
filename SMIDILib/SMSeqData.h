@@ -1,8 +1,8 @@
-//******************************************************************************
+ï»¿//******************************************************************************
 //
 // Simple MIDI Library / SMSeqData
 //
-// ƒV[ƒPƒ“ƒXƒf[ƒ^ƒNƒ‰ƒX
+// ã‚·ãƒ¼ã‚±ãƒ³ã‚¹ãƒ‡ãƒ¼ã‚¿ã‚¯ãƒ©ã‚¹
 //
 // Copyright (C) 2010-2013 WADA Masashi. All Rights Reserved.
 //
@@ -29,94 +29,116 @@ namespace SMIDILib {
 
 
 //******************************************************************************
-// ƒV[ƒPƒ“ƒXƒf[ƒ^ƒNƒ‰ƒX
+// ã‚·ãƒ¼ã‚±ãƒ³ã‚¹ãƒ‡ãƒ¼ã‚¿ã‚¯ãƒ©ã‚¹
 //******************************************************************************
 class SMIDILIB_API SMSeqData
 {
 public:
 
-	//ƒRƒ“ƒXƒgƒ‰ƒNƒ^^ƒfƒXƒgƒ‰ƒNƒ^
+	//ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ï¼ãƒ‡ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 	SMSeqData();
 	virtual ~SMSeqData(void);
 
 	//----------------------------------------------------------------
-	//ƒf[ƒ^ì¬Œn
+	//ãƒ‡ãƒ¼ã‚¿ä½œæˆç³»
 	//----------------------------------------------------------------
-	//SMFƒtƒH[ƒ}ƒbƒg“o˜^
+	//SMFãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆç™»éŒ²
 	void SetSMFFormat(unsigned long smfFormat);
 
-	//ŠÔ‰ğ‘œ“x“o˜^
+	//æ™‚é–“è§£åƒåº¦ç™»éŒ²
 	void SetTimeDivision(unsigned long timeDivision);
 
-	//ƒgƒ‰ƒbƒN“o˜^
+	//ãƒˆãƒ©ãƒƒã‚¯ç™»éŒ²
 	int AddTrack(SMTrack* pTrack);
 
-	//ƒgƒ‰ƒbƒN“o˜^I—¹
+	//ãƒˆãƒ©ãƒƒã‚¯ç™»éŒ²çµ‚äº†
 	int CloseTrack();
 
-	//ƒtƒ@ƒCƒ‹–¼“o˜^
+	//ãƒ•ã‚¡ã‚¤ãƒ«åç™»éŒ²
 	void SetFileName(const char* pFileName);
 
-	//ƒNƒŠƒA
+	//ã‚¯ãƒªã‚¢
 	void Clear();
 
 // >>> add 20120728 yossiepon begin
 
-	//ƒV[ƒPƒ“ƒX’Ç‰Á
+	//ã‚·ãƒ¼ã‚±ãƒ³ã‚¹è¿½åŠ 
 	void AddSequence(SMSeqData &other, short portNo = -1, short chNo = -1);
 
 // <<< add 20120728 yossiepon end
 
 	//----------------------------------------------------------------
-	//ƒf[ƒ^æ“¾Œn
+	//ãƒ‡ãƒ¼ã‚¿å–å¾—ç³»
 	//----------------------------------------------------------------
-	//SMFƒtƒH[ƒ}ƒbƒgæ“¾
+	//SMFãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆå–å¾—
 	unsigned long GetSMFFormat();
 
-	//ŠÔ‰ğ‘œ“xæ“¾
+	//æ™‚é–“è§£åƒåº¦å–å¾—
 	unsigned long GetTimeDivision();
 
-	//ƒgƒ‰ƒbƒN”æ“¾
+	//ãƒˆãƒ©ãƒƒã‚¯æ•°å–å¾—
 	unsigned long GetTrackNum();
 
-	//ƒgƒ‰ƒbƒNæ“¾
+	//ãƒˆãƒ©ãƒƒã‚¯å–å¾—
 	int GetTrack(unsigned long index, SMTrack* pTrack);
 
-	//ƒ}[ƒWÏ‚İƒgƒ‰ƒbƒNæ“¾
+	//ãƒãƒ¼ã‚¸æ¸ˆã¿ãƒˆãƒ©ãƒƒã‚¯å–å¾—
 	int GetMergedTrack(SMTrack* pMergedTrack);
 
-	//ƒg[ƒ^ƒ‹ƒ`ƒbƒNƒ^ƒCƒ€æ“¾
+	// merged tick-based note list, built once and cached (shared read-only by all
+	// scene components so the note-on/off pairing runs once, not per component).
+	// The returned list is owned by SMSeqData; do not modify or free it.
+	int GetMergedNoteList(SMNoteList** ppNoteList);
+
+	// same, but WITH each note's source track number (parallel array, same order)
+	// for the channel+track color mode. Also built once and cached.
+	int GetMergedNoteListWithTrack(SMNoteList** ppNoteList, const unsigned char** ppTrackNo);
+
+	// merged note list with REAL-TIME (msec) start/end, derived from the cached
+	// tick list by a tick->ms tempo conversion (no second note-on/off pairing).
+	int GetMergedNoteListRealTime(SMNoteList** ppNoteList);
+
+	// same, but the realtime list is derived from the WITH-TRACK list so the
+	// returned source-track array stays aligned with it (for ripple track color).
+	int GetMergedNoteListWithTrackRealTime(SMNoteList** ppNoteList, const unsigned char** ppTrackNo);
+
+	// one track's note list without copying the track first (cheaper than GetTrack)
+	int GetTrackNoteList(unsigned long index, SMNoteList* pNoteList);
+
+	void ReleaseMergedNoteList();
+
+	//ãƒˆãƒ¼ã‚¿ãƒ«ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ å–å¾—
 	unsigned long GetTotalTickTime();
 
-	//ƒg[ƒ^ƒ‹‰‰‘tŠÔæ“¾
+	//ãƒˆãƒ¼ã‚¿ãƒ«æ¼”å¥æ™‚é–“å–å¾—
 	unsigned long GetTotalPlayTime();
 
-	//ƒeƒ“ƒ|æ“¾
+	//ãƒ†ãƒ³ãƒå–å¾—
 	unsigned long GetTempo();
 
-	//ƒeƒ“ƒ|æ“¾(BPM)
+	//ãƒ†ãƒ³ãƒå–å¾—(BPM)
 	unsigned long GetTempoBPM();
 
-	//”q‹L†æ“¾F•ªq‚Æ•ª•ê
+	//æ‹å­è¨˜å·å–å¾—ï¼šåˆ†å­ã¨åˆ†æ¯
 	unsigned long GetBeatNumerator();
 	unsigned long GetBeatDenominator();
 
-	//¬ß”æ“¾
+	//å°ç¯€æ•°å–å¾—
 	unsigned long GetBarNum();
 
-	//ƒRƒs[ƒ‰ƒCƒg•¶š—ñæ“¾
+	//ã‚³ãƒ”ãƒ¼ãƒ©ã‚¤ãƒˆæ–‡å­—åˆ—å–å¾—
 	const char* GetCopyRight();
 
-	//ƒ^ƒCƒgƒ‹•¶š—ñæ“¾
+	//ã‚¿ã‚¤ãƒˆãƒ«æ–‡å­—åˆ—å–å¾—
 	const char* GetTitle();
 
-	//¬ßƒŠƒXƒgæ“¾
+	//å°ç¯€ãƒªã‚¹ãƒˆå–å¾—
 	int GetBarList(SMBarList* pBarList);
 
-	//ƒ|[ƒgƒŠƒXƒgæ“¾
+	//ãƒãƒ¼ãƒˆãƒªã‚¹ãƒˆå–å¾—
 	int GetPortList(SMPortList* pPortList);
 
-	//ƒtƒ@ƒCƒ‹–¼æ“¾
+	//ãƒ•ã‚¡ã‚¤ãƒ«åå–å¾—
 	const char* GetFileName();
 
 private:
@@ -147,8 +169,14 @@ private:
 	std::string m_FileName;
 	SMTrackList m_TrackList;
 	SMTrack* m_pMergedTrack;
+	SMNoteList* m_pMergedNoteList;       // cached tick-based merged note list (lazy)
+	SMNoteList* m_pMergedNoteListTrack;  // cached merged note list w/ track origin (lazy)
+	unsigned char* m_pMergedTrackNo;     // parallel source-track array for the above
+	SMNoteList* m_pMergedNoteListRT;     // cached merged note list with realtime (ms)
+	SMNoteList* m_pMergedNoteListWithTrackRT;  // realtime list aligned with m_pMergedTrackNo
 
 	int _MergeTracks();
+	int _BuildRealTimeNoteList(SMNoteList* pTickList, SMNoteList** ppRTList);
 	double _GetDeltaTimeMsec(unsigned long tempo, unsigned long deltaTime);
 	int _GetTempo(unsigned long* pTempo);
 	int _GetBeat(unsigned long* pNumerator, unsigned long* pDenominator);
@@ -156,7 +184,7 @@ private:
 	int _CalcTotalTime();
 	int _SearchText();
 
-	//‘ã“ü‚ÆƒRƒs[ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚Ì‹Ö~
+	//ä»£å…¥ã¨ã‚³ãƒ”ãƒ¼ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã®ç¦æ­¢
 	void operator=(const SMSeqData&);
 	SMSeqData(const SMSeqData&);
 

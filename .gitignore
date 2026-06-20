@@ -1,0 +1,48 @@
+# Build outputs / intermediates
+x64/
+Debug/
+Release/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.idb
+*.ipdb
+*.iobj
+
+# IDE
+.vs/
+*.vcxproj.user
+
+# Binaries (build artifacts; not source)
+*.exe
+*.dll
+
+# Archives / backups
+*.7z
+
+# Temp tooling (carved DXSDK + helper scripts for byte-safe edits)
+_dxsdk_tmp/
+
+# Screenshots
+*.png
+
+# Embedded git repos / prior backup folder (kept out of this repo)
+back20260616/
+/imgui/
+
+# Runtime data (kept next to the built exe, not tracked in this fork:
+# personal/experimental scene confs + the bundled how-to-view images)
+/conf/
+/data/
+
+# xmake build output / cache
+/build/
+/.xmake/
+
+# vcpkg manifest-mode install dir
+/vcpkg_installed/
+
+# ImGui runtime layout (regenerated at run time)
+MIDITrail/imgui.ini
