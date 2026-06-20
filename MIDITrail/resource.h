@@ -1,6 +1,6 @@
-//{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ Ç≈ê∂ê¨Ç≥ÇÍÇΩÉCÉìÉNÉãÅ[Éh ÉtÉ@ÉCÉãÅB
-// MIDITrail.rc Ç≈égóp
+Ôªø//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++ „ÅßÁîüÊàê„Åï„Çå„Åü„Ç§„É≥„ÇØ„É´„Éº„Éâ „Éï„Ç°„Ç§„É´„ÄÇ
+// MIDITrail.rc „Åß‰ΩøÁî®
 //
 #define IDC_MYICON                      2
 #define IDD_MENUWINDOW_DIALOG           102
@@ -18,6 +18,7 @@
 #define IDD_HOWTOVIEW                   131
 #define IDD_GRAPHIC_CFG                 132
 #define IDD_MIDIIN_CFG                  133
+#define IDD_VIDEO_EXPORT                134
 #define IDC_COMBO_PORT_A                1000
 #define IDC_COMBO_PORT_B                1001
 #define IDC_COMBO_PORT_C                1002
@@ -39,6 +40,13 @@
 #define IDC_EDIT_IMAGE_FILE_PATH        1022
 #define IDC_BTN_BROWSE                  1023
 #define IDC_EDIT_QUARTER_NOTE_LENGTH_MAG 1024
+#define IDC_COMBO_VE_CODEC              1025
+#define IDC_EDIT_VE_WIDTH               1026
+#define IDC_EDIT_VE_HEIGHT              1027
+#define IDC_EDIT_VE_FPS                 1028
+#define IDC_EDIT_VE_QUALITY             1029
+#define IDC_CHECK_VE_360                1030
+#define IDM_EXPORT_VIDEO                32853
 #define IDM_OPEN_FILE                   32771
 #define IDM_PLAY                        32772
 #define IDM_STOP                        32773
@@ -81,6 +89,8 @@
 #define IDM_VIEWPOINT3                  32844
 #define IDM_FULLSCREEN                  32849
 #define IDM_VIEW_PIANOROLLRING           32850
+#define IDM_VIEW_SINGLEKEYBOARD          32851
+#define IDM_ENABLE_PITCHBEND_ALLNOTES    32852
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -89,7 +99,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        134
-#define _APS_NEXT_COMMAND_VALUE         32851
+#define _APS_NEXT_COMMAND_VALUE         32853
 #define _APS_NEXT_CONTROL_VALUE         1025
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
