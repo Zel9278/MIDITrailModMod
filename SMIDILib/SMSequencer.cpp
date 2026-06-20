@@ -1,18 +1,18 @@
-//******************************************************************************
+ï»¿//******************************************************************************
 //
 // Simple MIDI Library / SMSequencer
 //
-// ƒV[ƒPƒ“ƒTƒNƒ‰ƒX
+// ã‚·ãƒ¼ã‚±ãƒ³ã‚µã‚¯ãƒ©ã‚¹
 //
 // Copyright (C) 2010-2013 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
 // MEMO:
-// ƒ^ƒCƒ}[ƒXƒŒƒbƒh‚Í‰‰‘tˆ—‚ğs‚¤‚½‚ßAMIDIo—ÍƒfƒoƒCƒX‚Ì§Œä‚Éê”O
-// ‚³‚¹‚éB‚±‚ÌƒXƒŒƒbƒh‚Å‰æ–ÊXVˆ—“™‚ğs‚Á‚Ä‚Í‚È‚ç‚È‚¢B
-// ‘¼ƒXƒŒƒbƒh‚Ö‚Ì’Ê’m‚ÍPostMessage“™‚ÅÀŒ»‚·‚éB
-// _TimerCallBack()¨_OnTimer()¨EEE
+// ã‚¿ã‚¤ãƒãƒ¼ã‚¹ãƒ¬ãƒƒãƒ‰ã¯æ¼”å¥å‡¦ç†ã‚’è¡Œã†ãŸã‚ã€MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹ã®åˆ¶å¾¡ã«å°‚å¿µ
+// ã•ã›ã‚‹ã€‚ã“ã®ã‚¹ãƒ¬ãƒƒãƒ‰ã§ç”»é¢æ›´æ–°å‡¦ç†ç­‰ã‚’è¡Œã£ã¦ã¯ãªã‚‰ãªã„ã€‚
+// ä»–ã‚¹ãƒ¬ãƒƒãƒ‰ã¸ã®é€šçŸ¥ã¯PostMessageç­‰ã§å®Ÿç¾ã™ã‚‹ã€‚
+// _TimerCallBack()â†’_OnTimer()â†’ãƒ»ãƒ»ãƒ»
 
 #include "StdAfx.h"
 #include "YNBaseLib.h"
@@ -28,7 +28,7 @@ namespace SMIDILib {
 
 
 //******************************************************************************
-// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
+// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 //******************************************************************************
 SMSequencer::SMSequencer(void)
 {
@@ -52,42 +52,42 @@ SMSequencer::SMSequencer(void)
 	m_PlaybackSpeed = 1;
 	m_PlaySpeedRatio = 1.0;
 
-	//ƒXƒLƒbƒv§Œä
+	//ã‚¹ã‚­ãƒƒãƒ—åˆ¶å¾¡
 	m_isSkipping = false;
 	m_SkipTargetTime = 0;
 	m_NotesCount = 0;
 	m_MovingTimeSpanInMsec = 0;
 
-	//¬ß”Ô†§ŒäŒn
+	//å°ç¯€ç•ªå·åˆ¶å¾¡ç³»
 	m_TickTimeOfBar = 0;
 	m_CurBarNo = 1;
 	m_PrevBarTickTime = 0;
 
-	//”q‹L†
+	//æ‹å­è¨˜å·
 	m_BeatNumerator = 0;
 	m_BeatDenominator = 0;
 
-	//ƒ|[ƒgî•ñƒNƒŠƒA
+	//ãƒãƒ¼ãƒˆæƒ…å ±ã‚¯ãƒªã‚¢
 	_ClearPortInfo();
 }
 
 //******************************************************************************
-// ƒfƒXƒgƒ‰ƒNƒ^
+// ãƒ‡ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 //******************************************************************************
 SMSequencer::~SMSequencer(void)
 {
-	//ƒ|[ƒgî•ñƒNƒŠƒA
+	//ãƒãƒ¼ãƒˆæƒ…å ±ã‚¯ãƒªã‚¢
 	_ClearPortInfo();
 
-	//MIDIo—ÍƒfƒoƒCƒX‚ğ•Â‚¶‚é
+	//MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹ã‚’é–‰ã˜ã‚‹
 	_CloseMIDIOutDev();
 
-	//ƒ^ƒCƒ}ƒfƒoƒCƒX‰ğ•ú
+	//ã‚¿ã‚¤ãƒãƒ‡ãƒã‚¤ã‚¹è§£æ”¾
 	_ReleaseTimerDev();
 }
 
 //******************************************************************************
-// ‰Šú‰»
+// åˆæœŸåŒ–
 //******************************************************************************
 int SMSequencer::Initialize(
 		SMMsgQueue* pMsgQueue
@@ -100,22 +100,22 @@ int SMSequencer::Initialize(
 		goto EXIT;
 	}
 
-	//MIDIo—ÍƒfƒoƒCƒX‰Šú‰»
+	//MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹åˆæœŸåŒ–
 	result = m_OutDevCtrl.Initialize();
 	if (result != 0) goto EXIT;
 
-	//ƒ|[ƒgî•ñƒNƒŠƒA
+	//ãƒãƒ¼ãƒˆæƒ…å ±ã‚¯ãƒªã‚¢
 	_ClearPortInfo();
 
-	//ƒCƒxƒ“ƒg“]‘—ƒIƒuƒWƒFƒNƒg‰Šú‰»
+	//ã‚¤ãƒ™ãƒ³ãƒˆè»¢é€ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆåˆæœŸåŒ–
 	result = m_MsgTrans.Initialize(pMsgQueue);
 	if (result != 0) goto EXIT;
 
-	//ƒCƒxƒ“ƒgƒEƒHƒbƒ`ƒƒ[‰Šú‰»
+	//ã‚¤ãƒ™ãƒ³ãƒˆã‚¦ã‚©ãƒƒãƒãƒ£ãƒ¼åˆæœŸåŒ–
 	result = m_EventWatcher.Initialize(&m_MsgTrans);
 	if (result != 0) goto EXIT;
 
-	//ƒ^ƒCƒ}ƒfƒoƒCƒX‰Šú‰»
+	//ã‚¿ã‚¤ãƒãƒ‡ãƒã‚¤ã‚¹åˆæœŸåŒ–
 	result = _InitializeTimerDev();
 	if (result != 0) goto EXIT;
 
@@ -124,7 +124,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒ|[ƒg‘Î‰ƒfƒoƒCƒX“o˜^
+// ãƒãƒ¼ãƒˆå¯¾å¿œãƒ‡ãƒã‚¤ã‚¹ç™»éŒ²
 //******************************************************************************
 int SMSequencer::SetPortDev(
 		unsigned char portNo,
@@ -150,7 +150,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒV[ƒPƒ“ƒXƒf[ƒ^“o˜^
+// ã‚·ãƒ¼ã‚±ãƒ³ã‚¹ãƒ‡ãƒ¼ã‚¿ç™»éŒ²
 //******************************************************************************
 int SMSequencer::SetSeqData(
 		SMSeqData* pSeqData
@@ -167,31 +167,31 @@ int SMSequencer::SetSeqData(
 
 	m_pSeqData = pSeqData;
 
-	//ƒ}[ƒWÏ‚İƒgƒ‰ƒbƒNæ“¾
+	//ãƒãƒ¼ã‚¸æ¸ˆã¿ãƒˆãƒ©ãƒƒã‚¯å–å¾—
 	result = m_pSeqData->GetMergedTrack(&m_Track);
 	if (result != 0) goto EXIT;
 
-	//•ª‰ğ”\æ“¾Fl•ª‰¹•„‚Ì’·‚³‚ğ¦‚·’l (ex. 48, 480, ...)
+	//åˆ†è§£èƒ½å–å¾—ï¼šå››åˆ†éŸ³ç¬¦ã®é•·ã•ã‚’ç¤ºã™å€¤ (ex. 48, 480, ...)
 	m_TimeDivision = m_pSeqData->GetTimeDivision();
 	if (m_TimeDivision == 0) {
-		//ƒf[ƒ^ˆÙíFSMF“Ç‚İ‚İ‚Éƒ`ƒFƒbƒN‚µ‚Ä‚¢‚é‚Í‚¸
+		//ãƒ‡ãƒ¼ã‚¿ç•°å¸¸ï¼šSMFèª­ã¿è¾¼ã¿æ™‚ã«ãƒã‚§ãƒƒã‚¯ã—ã¦ã„ã‚‹ã¯ãš
 		result = YN_SET_ERR("Program error.", 0, 0);
 		goto EXIT;
 	}
 
-	//ƒeƒ“ƒ|æ“¾
+	//ãƒ†ãƒ³ãƒå–å¾—
 	m_Tempo = m_pSeqData->GetTempo();
 	if (m_Tempo == 0) {
-		//ƒf[ƒ^ˆÙí
+		//ãƒ‡ãƒ¼ã‚¿ç•°å¸¸
 		result = YN_SET_ERR("Invalid data found.", 0, 0);
 		goto EXIT;
 	}
 
-	//”q‹L†‚©‚ç1¬ß‚ ‚½‚è‚Ìƒ`ƒbƒNƒ^ƒCƒ€‚ğZo
+	//æ‹å­è¨˜å·ã‹ã‚‰1å°ç¯€ã‚ãŸã‚Šã®ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‚’ç®—å‡º
 	numerator = m_pSeqData->GetBeatNumerator();
 	denominator = m_pSeqData->GetBeatDenominator();
 	if (denominator == 0) {
-		//ƒf[ƒ^ˆÙí
+		//ãƒ‡ãƒ¼ã‚¿ç•°å¸¸
 		result = YN_SET_ERR("Invalid data found.", numerator, denominator);
 		goto EXIT;
 	}
@@ -205,7 +205,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ‰‰‘tŠJn
+// æ¼”å¥é–‹å§‹
 //******************************************************************************
 int SMSequencer::Play()
 {
@@ -217,24 +217,24 @@ int SMSequencer::Play()
 		goto EXIT;
 	}
 
-	//‰‰‘t’†‚È‚ç‰½‚à‚µ‚È‚¢
+	//æ¼”å¥ä¸­ãªã‚‰ä½•ã‚‚ã—ãªã„
 	if (m_Status == StatusPlay) goto EXIT;
 
-	//•‚“®¬”“_‰‰Z¸“x‚ğ”{¸“x‚Éİ’è
+	//æµ®å‹•å°æ•°ç‚¹æ¼”ç®—ç²¾åº¦ã‚’å€ç²¾åº¦ã«è¨­å®š
 	result = fpuCtrl.Start(SMFPUCtrl::FPUDouble);
 	if (result != 0) goto EXIT;
 
-	//æ“ª‚©‚ç‰‰‘tŠJn
+	//å…ˆé ­ã‹ã‚‰æ¼”å¥é–‹å§‹
 	if (m_Status == StatusStop) {
-		//MIDIo—ÍƒfƒoƒCƒX‚ğŠJ‚­
+		//MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹ã‚’é–‹ã
 		result = _OpenMIDIOutDev();
 		if (result != 0) goto EXIT;
 
-		//Ä¶ŠJnƒpƒ‰ƒ[ƒ^‰Šú‰»
+		//å†ç”Ÿé–‹å§‹ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿åˆæœŸåŒ–
 		result = _InitializeParamsOnPlayStart();
 		if (result != 0) goto EXIT;
 	}
-	//ˆê’â~‚©‚ç‰‰‘tÄŠJ
+	//ä¸€æ™‚åœæ­¢ã‹ã‚‰æ¼”å¥å†é–‹
 	if (m_Status == StatusPause) {
 		m_PrevTimerTime = _GetCurTimeInNano();
 	}
@@ -242,13 +242,13 @@ int SMSequencer::Play()
 	m_UserRequest = RequestNone;
 	m_MsgTrans.PostPlayStatus(SM_PLAYSTATUS_PLAY);
 
-	//ƒ^ƒCƒ}‹N“®
+	//ã‚¿ã‚¤ãƒèµ·å‹•
 	m_TimerID = timeSetEvent(
-					m_TimerResolution, //ƒCƒxƒ“ƒg’x‰„iƒ~ƒŠ•bj
-					m_TimerResolution, //ƒCƒxƒ“ƒg•ª‰ğ”\iƒ~ƒŠ•bj
-					_TimerCallBack,    //ƒR[ƒ‹ƒoƒbƒNŠÖ”
-					(DWORD_PTR)this,   //ƒ†[ƒU[ƒR[ƒ‹ƒoƒbƒNƒf[ƒ^
-					TIME_PERIODIC      //ƒ^ƒCƒ}[í•ÊFüŠúŒÄ‚Ño‚µ
+					m_TimerResolution, //ã‚¤ãƒ™ãƒ³ãƒˆé…å»¶ï¼ˆãƒŸãƒªç§’ï¼‰
+					m_TimerResolution, //ã‚¤ãƒ™ãƒ³ãƒˆåˆ†è§£èƒ½ï¼ˆãƒŸãƒªç§’ï¼‰
+					_TimerCallBack,    //ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯é–¢æ•°
+					(DWORD_PTR)this,   //ãƒ¦ãƒ¼ã‚¶ãƒ¼ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯ãƒ‡ãƒ¼ã‚¿
+					TIME_PERIODIC      //ã‚¿ã‚¤ãƒãƒ¼ç¨®åˆ¥ï¼šå‘¨æœŸå‘¼ã³å‡ºã—
 				);
 	if (m_TimerID == NULL) {
 		result = YN_SET_ERR("Timer device error.", m_TimerResolution, 0);
@@ -263,23 +263,23 @@ EXIT:;
 }
 
 //******************************************************************************
-// ‰‰‘tˆê’â~
+// æ¼”å¥ä¸€æ™‚åœæ­¢
 //******************************************************************************
 void SMSequencer::Pause()
 {
-	//—v‹‚ğó‚¯•t‚¯‚é‚¾‚¯iƒLƒ…[ƒCƒ“ƒO‚Í‚µ‚È‚¢j
-	//ÀÛ‚Ìˆ—‚Íƒ^ƒCƒ}[ƒXƒŒƒbƒh‚ÉˆÏ”C‚·‚é
+	//è¦æ±‚ã‚’å—ã‘ä»˜ã‘ã‚‹ã ã‘ï¼ˆã‚­ãƒ¥ãƒ¼ã‚¤ãƒ³ã‚°ã¯ã—ãªã„ï¼‰
+	//å®Ÿéš›ã®å‡¦ç†ã¯ã‚¿ã‚¤ãƒãƒ¼ã‚¹ãƒ¬ãƒƒãƒ‰ã«å§”ä»»ã™ã‚‹
 	m_UserRequest = RequestPause;
 }
 
 //******************************************************************************
-// ‰‰‘tÄŠJ
+// æ¼”å¥å†é–‹
 //******************************************************************************
 int SMSequencer::Resume()
 {
 	int result = 0;
 
-	//Œ»İ‚ÍPlay()‚ªÄŠJˆ—‚àŒ“‚Ë‚Ä‚¢‚é
+	//ç¾åœ¨ã¯Play()ãŒå†é–‹å‡¦ç†ã‚‚å…¼ã­ã¦ã„ã‚‹
 	result = Play();
 	if (result != 0) goto EXIT;
 
@@ -288,26 +288,26 @@ EXIT:;
 }
 
 //******************************************************************************
-// ‰‰‘t’â~
+// æ¼”å¥åœæ­¢
 //******************************************************************************
 void SMSequencer::Stop()
 {
 
 	if (m_Status == StatusPause) {
-		//ˆê’â~’†‚Ìê‡‚Íƒ^ƒCƒ}[ƒXƒŒƒbƒh‚ª’â~‚µ‚Ä‚¢‚é‚½‚ß
-		//‚±‚±‚©‚çI—¹‚ğ’Ê’m‚·‚é
+		//ä¸€æ™‚åœæ­¢ä¸­ã®å ´åˆã¯ã‚¿ã‚¤ãƒãƒ¼ã‚¹ãƒ¬ãƒƒãƒ‰ãŒåœæ­¢ã—ã¦ã„ã‚‹ãŸã‚
+		//ã“ã“ã‹ã‚‰çµ‚äº†ã‚’é€šçŸ¥ã™ã‚‹
 		m_Status = StatusStop;
 		m_MsgTrans.PostPlayStatus(SM_PLAYSTATUS_STOP);
 	}
 	else {
-		//‰‰‘t’†‚Í—v‹‚ğó‚¯•t‚¯‚é‚¾‚¯iƒLƒ…[ƒCƒ“ƒO‚Í‚µ‚È‚¢j
-		//ÀÛ‚Ìˆ—‚Íƒ^ƒCƒ}[ƒXƒŒƒbƒh‚ÉˆÏ”C‚·‚é
+		//æ¼”å¥ä¸­ã¯è¦æ±‚ã‚’å—ã‘ä»˜ã‘ã‚‹ã ã‘ï¼ˆã‚­ãƒ¥ãƒ¼ã‚¤ãƒ³ã‚°ã¯ã—ãªã„ï¼‰
+		//å®Ÿéš›ã®å‡¦ç†ã¯ã‚¿ã‚¤ãƒãƒ¼ã‚¹ãƒ¬ãƒƒãƒ‰ã«å§”ä»»ã™ã‚‹
 		m_UserRequest = RequestStop;
 	}
 }
 
 //******************************************************************************
-// Ä¶ƒXƒs[ƒhİ’èin”{‘¬j
+// å†ç”Ÿã‚¹ãƒ”ãƒ¼ãƒ‰è¨­å®šï¼ˆnå€é€Ÿï¼‰
 //******************************************************************************
 void SMSequencer::SetPlaybackSpeed(
 		unsigned long nTimes
@@ -317,7 +317,7 @@ void SMSequencer::SetPlaybackSpeed(
 }
 
 //******************************************************************************
-// Ä¶ƒXƒs[ƒhİ’èiƒp[ƒZƒ“ƒgj
+// å†ç”Ÿã‚¹ãƒ”ãƒ¼ãƒ‰è¨­å®šï¼ˆãƒ‘ãƒ¼ã‚»ãƒ³ãƒˆï¼‰
 //******************************************************************************
 void SMSequencer::SetPlaySpeedRatio(
 		unsigned long ratio
@@ -327,7 +327,7 @@ void SMSequencer::SetPlaySpeedRatio(
 }
 
 //******************************************************************************
-// ƒŠƒƒCƒ“ƒh^ƒXƒLƒbƒvˆÚ“®ŠÔİ’è
+// ãƒªãƒ¯ã‚¤ãƒ³ãƒ‰ï¼ã‚¹ã‚­ãƒƒãƒ—ç§»å‹•æ™‚é–“è¨­å®š
 //******************************************************************************
 void SMSequencer::SetMovingTimeSpanInMsec(
 		unsigned long timeSpan
@@ -337,7 +337,27 @@ void SMSequencer::SetMovingTimeSpanInMsec(
 }
 
 //******************************************************************************
-//‰‰‘tˆÊ’uƒXƒLƒbƒv
+//ï¿½ï¿½ï¿½İ‚Ì‰ï¿½ï¿½tTickï¿½ï¿½ï¿½Ê’uï¿½ï¿½ï¿½æ“¾
+//  m_TotalTickTimeTempï¿½Ì“^ï¿½Cï¿½}ï¿½[ï¿½Xï¿½ï¿½ï¿½bï¿½hï¿½Å–ï¿½ï¿½ï¿½Xï¿½Vï¿½ï¿½ï¿½ï¿½ï¿½ÅVï¿½Ìï¿½ï¿½tTickï¿½B
+//  32bitï¿½lï¿½Ì“Ç‚İï¿½ï¿½ÍŒï¿½ï¿½qï¿½Iï¿½È‚Ì‚Åï¿½Xï¿½ï¿½ï¿½bï¿½hï¿½ï¿½ï¿½ï¿½Qï¿½Æ‚ï¿½ï¿½Ä‚ï¿½ï¿½\ï¿½ï¿½È‚ï¿½ï¿½B
+//  ï¿½ï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½Lï¿½ï¿½ï¿½[ï¿½É‰ï¿½ï¿½ï¿½ï¿½ï¿½ê‚¸ï¿½Ê’uï¿½ï¿½ï¿½æ“¾ï¿½Å‚ï¿½ï¿½é‚½ï¿½ßï¿½ï¿½ï¿½ï¿½×ï¿½ï¿½É‚ï¿½ï¿½mï¿½ï¿½ï¿½B
+//******************************************************************************
+unsigned long SMSequencer::GetCurrentTickTime()
+{
+	return m_TotalTickTimeTemp;
+}
+
+//******************************************************************************
+//ï¿½ï¿½ï¿½İ‚Ì‰ï¿½ï¿½tï¿½ï¿½ï¿½ï¿½(msec)ï¿½ï¿½ï¿½æ“¾
+//  m_CurPlayTimeï¿½Ì“iï¿½mï¿½bï¿½Pï¿½ÊB1000000ï¿½ÅŠï¿½ï¿½ï¿½ï¿½msecï¿½B
+//******************************************************************************
+unsigned long SMSequencer::GetCurrentPlayTimeMSec()
+{
+	return (unsigned long)(m_CurPlayTime / 1000000);
+}
+
+//******************************************************************************
+//æ¼”å¥ä½ç½®ã‚¹ã‚­ãƒƒãƒ—
 //******************************************************************************
 int SMSequencer::Skip(
 		int relativeTimeInMsec
@@ -346,10 +366,10 @@ int SMSequencer::Skip(
 	int result = 0;
 	unsigned long long diffTime = 0;
 
-	//‰‰‘t’†‚Å‚È‚¯‚ê‚Î‰½‚à‚µ‚È‚¢
+	//æ¼”å¥ä¸­ã§ãªã‘ã‚Œã°ä½•ã‚‚ã—ãªã„
 	if (m_Status != StatusPlay) goto EXIT;
 
-	//‰‰‘tˆÊ’u
+	//æ¼”å¥ä½ç½®
 	if (relativeTimeInMsec < 0) {
 		diffTime = (unsigned long long)(-1 * relativeTimeInMsec) * 1000000;
 		if (m_CurPlayTime < diffTime) {
@@ -362,11 +382,11 @@ int SMSequencer::Skip(
 	else {
 		diffTime = (unsigned long long)(relativeTimeInMsec) * 1000000;
 		m_SkipTargetTime = m_CurPlayTime + diffTime;
-		//‹È‚ÌI—¹ŠÔ‚ğ’´‚¦‚é‰Â”\«‚ª‚ ‚é
+		//æ›²ã®çµ‚äº†æ™‚é–“ã‚’è¶…ãˆã‚‹å¯èƒ½æ€§ãŒã‚ã‚‹
 	}
 
-	//‰‰‘t’†‚Í—v‹‚ğó‚¯•t‚¯‚é‚¾‚¯iƒLƒ…[ƒCƒ“ƒO‚Í‚µ‚È‚¢j
-	//ÀÛ‚Ìˆ—‚Íƒ^ƒCƒ}[ƒXƒŒƒbƒh‚ÉˆÏ”C‚·‚é
+	//æ¼”å¥ä¸­ã¯è¦æ±‚ã‚’å—ã‘ä»˜ã‘ã‚‹ã ã‘ï¼ˆã‚­ãƒ¥ãƒ¼ã‚¤ãƒ³ã‚°ã¯ã—ãªã„ï¼‰
+	//å®Ÿéš›ã®å‡¦ç†ã¯ã‚¿ã‚¤ãƒãƒ¼ã‚¹ãƒ¬ãƒƒãƒ‰ã«å§”ä»»ã™ã‚‹
 	m_UserRequest = RequestSkip;
 
 EXIT:;
@@ -374,7 +394,25 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒ^ƒCƒ}ƒfƒoƒCƒX‰Šú‰»
+// æ¼”å¥ä½ç½®ã‚’æ›²ã®å…ˆé ­ã«æˆ»ã™ï¼ˆåœæ­¢ä¸­ã®ã¿ï¼‰
+//   å†ç”Ÿçµ‚äº†å¾Œã«ãƒ“ãƒ¥ãƒ¼ã‚’æœ«å°¾ã¸æ®‹ã™ DX9 ã¨ç•°ãªã‚Šã€åœæ­¢ãƒœã‚¿ãƒ³ï¼æ›²ã®èª­ã¿è¾¼ã¿ã§ã¯
+//   å…ˆé ­ã¸æˆ»ã—ãŸã„ã€‚Play ã¨åŒã˜åˆæœŸåŒ–ãƒ«ãƒ¼ãƒãƒ³ã§ä½ç½®çŠ¶æ…‹ã ã‘å…ˆé ­ã«ãƒªã‚»ãƒƒãƒˆã™ã‚‹ã€‚
+//******************************************************************************
+int SMSequencer::Rewind()
+{
+	int result = 0;
+	//æ¼”å¥ä¸­ãƒ»ä¸€æ™‚åœæ­¢ä¸­ã¯ä¸å¯ï¼ˆã‚¿ã‚¤ãƒãƒ¼ã‚¹ãƒ¬ãƒƒãƒ‰ãŒä½ç½®ã‚’æ›´æ–°ã—ã¦ã„ã‚‹ãŸã‚ï¼‰
+	if (m_Status != StatusStop) goto EXIT;
+	if (m_pSeqData == NULL) goto EXIT;
+	//Play é–‹å§‹æ™‚ã¨åŒã˜ä½ç½®åˆæœŸåŒ–ï¼ˆGetCurrentTickTime/PlayTime ãŒ 0 ã‚’è¿”ã™ã‚ˆã†ã«ãªã‚‹ï¼‰
+	result = _InitializeParamsOnPlayStart();
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// ã‚¿ã‚¤ãƒãƒ‡ãƒã‚¤ã‚¹åˆæœŸåŒ–
 //******************************************************************************
 int SMSequencer::_InitializeTimerDev()
 {
@@ -384,7 +422,7 @@ int SMSequencer::_InitializeTimerDev()
 
 	if (m_TimerResolution != 0) goto EXIT;
 
-	//ƒ^ƒCƒ}ƒfƒoƒCƒX‚ÌÅ¬•ª‰ğ”\‚ğæ“¾i’Êí1msj
+	//ã‚¿ã‚¤ãƒãƒ‡ãƒã‚¤ã‚¹ã®æœ€å°åˆ†è§£èƒ½ã‚’å–å¾—ï¼ˆé€šå¸¸1msï¼‰
 	apiresult = timeGetDevCaps(&tc, sizeof(TIMECAPS));
 	if (apiresult != TIMERR_NOERROR) {
 		result = YN_SET_ERR("Timer device error.", apiresult, 0);
@@ -392,7 +430,7 @@ int SMSequencer::_InitializeTimerDev()
 	}
 	m_TimerResolution = tc.wPeriodMin;
 
-	//Å¬ƒ^ƒCƒ}•ª‰ğ”\‚Ìİ’è
+	//æœ€å°ã‚¿ã‚¤ãƒåˆ†è§£èƒ½ã®è¨­å®š
 	timeBeginPeriod(m_TimerResolution);
 
 EXIT:;
@@ -400,7 +438,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒ^ƒCƒ}ƒfƒoƒCƒX‰ğ•ú
+// ã‚¿ã‚¤ãƒãƒ‡ãƒã‚¤ã‚¹è§£æ”¾
 //******************************************************************************
 int SMSequencer::_ReleaseTimerDev()
 {
@@ -420,7 +458,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒ|[ƒgî•ñƒNƒŠƒA
+// ãƒãƒ¼ãƒˆæƒ…å ±ã‚¯ãƒªã‚¢
 //******************************************************************************
 void SMSequencer::_ClearPortInfo()
 {
@@ -432,14 +470,14 @@ void SMSequencer::_ClearPortInfo()
 }
 
 //******************************************************************************
-// MIDIo—ÍƒfƒoƒCƒXƒI[ƒvƒ“
+// MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹ã‚ªãƒ¼ãƒ—ãƒ³
 //******************************************************************************
 int SMSequencer::_OpenMIDIOutDev()
 {
 	int result = 0;
 	unsigned char portNo = 0;
 
-	//ƒ|[ƒg‘Î‰ƒfƒoƒCƒX–¼‚ğMIDIo—ÍƒfƒoƒCƒX§Œä‚É“o˜^
+	//ãƒãƒ¼ãƒˆå¯¾å¿œãƒ‡ãƒã‚¤ã‚¹åã‚’MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹åˆ¶å¾¡ã«ç™»éŒ²
 	for (portNo = 0; portNo < SM_MIDIOUT_PORT_NUM_MAX; portNo++) {
 		if (strlen(m_PortDevName[portNo]) > 0) {
 			result = m_OutDevCtrl.SetPortDev(portNo, m_PortDevName[portNo]);
@@ -447,7 +485,7 @@ int SMSequencer::_OpenMIDIOutDev()
 		}
 	}
 
-	//‘Sƒ|[ƒg‚ÌƒfƒoƒCƒX‚ğŠJ‚­
+	//å…¨ãƒãƒ¼ãƒˆã®ãƒ‡ãƒã‚¤ã‚¹ã‚’é–‹ã
 	result = m_OutDevCtrl.OpenPortDevAll();
 	if (result != 0) goto EXIT;
 
@@ -456,7 +494,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// MIDIo—ÍƒfƒoƒCƒXƒNƒ[ƒY
+// MIDIå‡ºåŠ›ãƒ‡ãƒã‚¤ã‚¹ã‚¯ãƒ­ãƒ¼ã‚º
 //******************************************************************************
 int SMSequencer::_CloseMIDIOutDev()
 {
@@ -470,7 +508,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ‰‰‘tƒCƒ“ƒ^[ƒoƒ‹ˆ—
+// æ¼”å¥ã‚¤ãƒ³ã‚¿ãƒ¼ãƒãƒ«å‡¦ç†
 //******************************************************************************
 int SMSequencer::_IntervalProc(
 		BOOL* pIsContinue
@@ -481,22 +519,24 @@ int SMSequencer::_IntervalProc(
 
 	*pIsContinue = true;
 
-	//‰‰‘tˆÊ’u‚ğXV
+	//æ¼”å¥ä½ç½®ã‚’æ›´æ–°
 	result = _UpdatePlayPosition();
 	if (result != 0) goto EXIT;
 
-	//ƒCƒxƒ“ƒgˆ—‚É“’B‚µ‚Ä‚¢‚½‚ç‘—Mˆ—‚ğs‚¤
-	if ((unsigned long long)m_NextEventTime <= m_CurPlayTime) {
+	//ã‚¤ãƒ™ãƒ³ãƒˆå‡¦ç†æ™‚åˆ»ã«åˆ°é”ã—ã¦ã„ãŸã‚‰é€ä¿¡å‡¦ç†ã‚’è¡Œã†
+	while (((unsigned long long)m_NextEventTime <= m_CurPlayTime) && *pIsContinue) {
 
-		//ƒ`ƒbƒNƒ^ƒCƒ€‡Œv
+		//ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ åˆè¨ˆ
 		m_TotalTickTime += m_PrevDeltaTime;
 
+		deltaTime = 0;
+
 		while (deltaTime == 0) {
-			//ƒCƒxƒ“ƒg‘—M
+			//ã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 			result = _OutputMIDIEvent(m_PortNo, &m_Event);
 			if (result != 0) goto EXIT;
 
-			//ƒf[ƒ^I’[‚È‚ç‰‰‘tI—¹
+			//ãƒ‡ãƒ¼ã‚¿çµ‚ç«¯ãªã‚‰æ¼”å¥çµ‚äº†
 			m_PlayIndex++;
 			if (m_PlayIndex >= m_Track.GetSize()) {
 				if (!m_isSkipping) {
@@ -509,14 +549,14 @@ int SMSequencer::_IntervalProc(
 				break;
 			}
 
-			//ŸƒCƒxƒ“ƒgæ“¾
+			//æ¬¡ã‚¤ãƒ™ãƒ³ãƒˆå–å¾—
 			m_Track.GetDataSet(m_PlayIndex, &deltaTime, &m_Event, &m_PortNo);
 		}
-		//’èŠú’Ê’m‚Ì‚½‚ßƒCƒxƒ“ƒg”­¶‚ğ‹L‰¯‚·‚é
-		//’èŠú’Ê’m‚ÍŒµ–§‚È¸“x‚ğ•K—v‚Æ‚µ‚È‚¢‚½‚ß1msec–¢–‚Í–³‹‚·‚é
+		//å®šæœŸé€šçŸ¥ã®ãŸã‚ã‚¤ãƒ™ãƒ³ãƒˆç™ºç”Ÿæ™‚åˆ»ã‚’è¨˜æ†¶ã™ã‚‹
+		//å®šæœŸé€šçŸ¥ã¯å³å¯†ãªç²¾åº¦ã‚’å¿…è¦ã¨ã—ãªã„ãŸã‚1msecæœªæº€ã¯ç„¡è¦–ã™ã‚‹
 		m_PrevEventTime = (unsigned long long)m_NextEventTime;
 
-		//ŸƒCƒxƒ“ƒg‘—MˆÊ’u‚ğZo
+		//æ¬¡ã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡ä½ç½®ã‚’ç®—å‡º
 		m_NextEventTime += _ConvTick2TimeNanosec(deltaTime);
 		m_PrevDeltaTime = deltaTime;
 	}
@@ -526,7 +566,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ‰‰‘tˆÊ’uXV
+// æ¼”å¥ä½ç½®æ›´æ–°
 //******************************************************************************
 int SMSequencer::_UpdatePlayPosition()
 {
@@ -539,21 +579,21 @@ int SMSequencer::_UpdatePlayPosition()
 
 	curTime = _GetCurTimeInNano();
 
-	//‘O‰ñƒ^ƒCƒ}[‚©‚ç‚ÌŒo‰ßŠÔ‚ğ—˜—p‚µ‚Ä‰‰‘tŠÔ‚ğXV
-	//  ‹N“®Œã‚©‚ç49“ú‚ğ‚Ü‚½‚®ƒP[ƒX‚Å‚à‚±‚ÌŒvZ‚Å–â‘è‚È‚¢
+	//å‰å›ã‚¿ã‚¤ãƒãƒ¼ã‹ã‚‰ã®çµŒéæ™‚é–“ã‚’åˆ©ç”¨ã—ã¦æ¼”å¥æ™‚é–“ã‚’æ›´æ–°
+	//  èµ·å‹•å¾Œã‹ã‚‰49æ—¥ã‚’ã¾ãŸãã‚±ãƒ¼ã‚¹ã§ã‚‚ã“ã®è¨ˆç®—ã§å•é¡Œãªã„
 	diffTime = curTime - m_PrevTimerTime;
 
-	//‘O‰ñƒ^ƒCƒ}[‚©‚ç‚ÌŒo‰ßŠÔ‚ğ—˜—p‚µ‚Ä‰‰‘tŠÔ‚ğXV
+	//å‰å›ã‚¿ã‚¤ãƒãƒ¼ã‹ã‚‰ã®çµŒéæ™‚é–“ã‚’åˆ©ç”¨ã—ã¦æ¼”å¥æ™‚é–“ã‚’æ›´æ–°
 	if (m_isSkipping) {
-		//ƒXƒLƒbƒv’†‚Ìê‡‚Í‰¼‘z“I‚É5msec.Œo‰ß‚³‚¹‚é
+		//ã‚¹ã‚­ãƒƒãƒ—ä¸­ã®å ´åˆã¯ä»®æƒ³çš„ã«5msec.çµŒéã•ã›ã‚‹
 		diffTime = 5 * 1000000;
 	}
 	else {
-		//ƒXƒLƒbƒv’†‚Å‚È‚¯‚ê‚ÎÀÛ‚ÌŒo‰ßŠÔ‚ğZo‚·‚é
+		//ã‚¹ã‚­ãƒƒãƒ—ä¸­ã§ãªã‘ã‚Œã°å®Ÿéš›ã®çµŒéæ™‚é–“ã‚’ç®—å‡ºã™ã‚‹
 		diffTime = curTime - m_PrevTimerTime;
 	}
 
-	//Ä¶ƒXƒs[ƒh‚ğ”½‰fin”{‘¬j
+	//å†ç”Ÿã‚¹ãƒ”ãƒ¼ãƒ‰ã‚’åæ˜ ï¼ˆnå€é€Ÿï¼‰
 	if (m_PlaybackSpeed == 1) {
 		diffTime = (unsigned long long)((double)diffTime * m_PlaySpeedRatio);
 	}
@@ -564,26 +604,26 @@ int SMSequencer::_UpdatePlayPosition()
 	m_CurPlayTime += diffTime;
 	m_PrevTimerTime = curTime;
 
-	//‘O‰ñƒCƒxƒ“ƒg”­¶‚©‚ç‚ÌŒo‰ßŠÔ‚ğƒ`ƒbƒNƒ^ƒCƒ€‚ÉŠ·Z
-	//  •ÏŠ·Œë·‚ª¶‚¶‚é‚ªŒë·‚ğ’~Ï‚³‚¹‚È‚¢‚½‚ß–â‘è‚È‚¢
+	//å‰å›ã‚¤ãƒ™ãƒ³ãƒˆç™ºç”Ÿã‹ã‚‰ã®çµŒéæ™‚é–“ã‚’ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã«æ›ç®—
+	//  å¤‰æ›èª¤å·®ãŒç”Ÿã˜ã‚‹ãŒèª¤å·®ã‚’è“„ç©ã•ã›ãªã„ãŸã‚å•é¡Œãªã„
 	diffTickTime = _ConvTimeNanosec2Tick(m_CurPlayTime - m_PrevEventTime);
 
-	//‹Èæ“ª‚©‚ç‚Ìƒ`ƒbƒNƒ^ƒCƒ€‡Œv
-	//m_TotalTickTime‚ÍƒCƒxƒ“ƒg”­¶‚É‚Ì‚İXV‚·‚é‚½‚ß‚±‚±‚Å‚Í‘‚«Š·‚¦‚È‚¢
+	//æ›²å…ˆé ­ã‹ã‚‰ã®ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ åˆè¨ˆ
+	//m_TotalTickTimeã¯ã‚¤ãƒ™ãƒ³ãƒˆç™ºç”Ÿæ™‚ã«ã®ã¿æ›´æ–°ã™ã‚‹ãŸã‚ã“ã“ã§ã¯æ›¸ãæ›ãˆãªã„
 	m_TotalTickTimeTemp = m_TotalTickTime + diffTickTime;
 
-	//’Ê’mŠÔ‚É“’B‚µ‚½‚ç‰‰‘tŠÔ‚ğ’Ê’m‚·‚é
+	//é€šçŸ¥æ™‚é–“ã«åˆ°é”ã—ãŸã‚‰æ¼”å¥æ™‚é–“ã‚’é€šçŸ¥ã™ã‚‹
 	if ((m_NextNtcTime <= m_CurPlayTime) && (!m_isSkipping)) {
 		m_MsgTrans.PostPlayTime((unsigned long)(m_CurPlayTime/1000000), m_TotalTickTimeTemp);
 // >>> modify 20120728 yossiepon begin
-		//’Ê’mŠÔŠu‚Í60FPS•\¦‚ğl—¶‚µ‚Ä1,000,000,000/120[nanosec]~Ä¶ƒXƒs[ƒh‚Æ‚·‚é
-		//TODO: ŠO•”‚©‚çŠÔŠu‚ğw’è‚Å‚«‚é‚æ‚¤‚É‚·‚é
+		//é€šçŸ¥é–“éš”ã¯60FPSè¡¨ç¤ºã‚’è€ƒæ…®ã—ã¦1,000,000,000/120[nanosec]Ã—å†ç”Ÿã‚¹ãƒ”ãƒ¼ãƒ‰ã¨ã™ã‚‹
+		//TODO: å¤–éƒ¨ã‹ã‚‰é–“éš”ã‚’æŒ‡å®šã§ãã‚‹ã‚ˆã†ã«ã™ã‚‹
 		ntcSpan = (unsigned long long)(1000000000.0 * m_PlaySpeedRatio / 120.0);
 // <<< modify 20120728 yossiepon end
 		m_NextNtcTime = m_CurPlayTime - (m_CurPlayTime % ntcSpan) + ntcSpan;
 	}
 
-	//¬ß”Ô†XV‚ÌŠm”F
+	//å°ç¯€ç•ªå·æ›´æ–°ã®ç¢ºèª
 	nextBarTickTime = m_PrevBarTickTime + m_TickTimeOfBar;
 	if (nextBarTickTime <= m_TotalTickTimeTemp) {
 		m_CurBarNo++;
@@ -598,7 +638,7 @@ int SMSequencer::_UpdatePlayPosition()
 }
 
 //******************************************************************************
-// ƒ`ƒbƒNƒ^ƒCƒ€‚©‚çÀŠÔ‚Ö‚Ì•ÏŠ·iƒiƒm•bj
+// ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‹ã‚‰å®Ÿæ™‚é–“ã¸ã®å¤‰æ›ï¼ˆãƒŠãƒç§’ï¼‰
 //******************************************************************************
 double SMSequencer::_ConvTick2TimeNanosec(
 		unsigned long tickTime
@@ -606,15 +646,15 @@ double SMSequencer::_ConvTick2TimeNanosec(
 {
 	double timeNanosec = 0;
 	
-	//(1) l•ª‰¹•„‚ ‚½‚è‚Ì•ª‰ğ”\ division
-	//    —áF48
-	//(2) ƒgƒ‰ƒbƒNƒf[ƒ^‚Ìƒfƒ‹ƒ^ƒ^ƒCƒ€ delta
-	//    •ª‰ğ”\‚Ì’l‚ğ—p‚¢‚Ä•\Œ»‚·‚éŠÔ·
-	//    •ª‰ğ”\‚ª48‚Åƒfƒ‹ƒ^ƒ^ƒCƒ€‚ª24‚È‚ç”ª•ª‰¹•„•ª‚ÌŠÔ·
-	//(3) ƒeƒ“ƒ|İ’èiƒ}ƒCƒNƒ•bj tempo
-	//    l•ª‰¹•„‚ÌÀŠÔŠÔŠu
+	//(1) å››åˆ†éŸ³ç¬¦ã‚ãŸã‚Šã®åˆ†è§£èƒ½ division
+	//    ä¾‹ï¼š48
+	//(2) ãƒˆãƒ©ãƒƒã‚¯ãƒ‡ãƒ¼ã‚¿ã®ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ  delta
+	//    åˆ†è§£èƒ½ã®å€¤ã‚’ç”¨ã„ã¦è¡¨ç¾ã™ã‚‹æ™‚é–“å·®
+	//    åˆ†è§£èƒ½ãŒ48ã§ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ ãŒ24ãªã‚‰å…«åˆ†éŸ³ç¬¦åˆ†ã®æ™‚é–“å·®
+	//(3) ãƒ†ãƒ³ãƒè¨­å®šï¼ˆãƒã‚¤ã‚¯ãƒ­ç§’ï¼‰ tempo
+	//    å››åˆ†éŸ³ç¬¦ã®å®Ÿæ™‚é–“é–“éš”
 	//
-	// ƒfƒ‹ƒ^ƒ^ƒCƒ€‚É‘Î‰‚·‚éÀŠÔŠÔŠuiƒ~ƒŠ•bj
+	// ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ ã«å¯¾å¿œã™ã‚‹å®Ÿæ™‚é–“é–“éš”ï¼ˆãƒŸãƒªç§’ï¼‰
 	//  = (delta / division) * tempo / 1000
 	//  = (delta * tempo) / (division * 1000)
 	
@@ -624,7 +664,7 @@ double SMSequencer::_ConvTick2TimeNanosec(
 }
 
 //******************************************************************************
-// ÀŠÔiƒiƒm•bj‚©‚çƒ`ƒbƒNƒ^ƒCƒ€‚Ö‚Ì•ÏŠ·
+// å®Ÿæ™‚é–“ï¼ˆãƒŠãƒç§’ï¼‰ã‹ã‚‰ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã¸ã®å¤‰æ›
 //******************************************************************************
 unsigned long SMSequencer::_ConvTimeNanosec2Tick(
 		unsigned long long timeNanosec
@@ -642,7 +682,7 @@ unsigned long SMSequencer::_ConvTimeNanosec2Tick(
 }
 
 //******************************************************************************
-// ƒCƒxƒ“ƒg‘—Mˆ—
+// ã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡å‡¦ç†
 //******************************************************************************
 int SMSequencer::_OutputMIDIEvent(
 		unsigned char portNo,
@@ -651,21 +691,21 @@ int SMSequencer::_OutputMIDIEvent(
 {
 	int result = 0;
 
-	//MIDIƒCƒxƒ“ƒg‘—M
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 	if (pEvent->GetType() == SMEvent::EventMIDI) {
 		SMEventMIDI eventMIDI;
 		eventMIDI.Attach(pEvent);
 		result = _SendMIDIEvent(portNo, &eventMIDI);
 		if (result != 0) goto EXIT;
 	}
-	//SysExƒCƒxƒ“ƒg‘—M
+	//SysExã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 	else if (pEvent->GetType() == SMEvent::EventSysEx) {
 		SMEventSysEx eventSysEx;
 		eventSysEx.Attach(pEvent);
 		result = _SendSysExEvent(portNo, &eventSysEx);
 		if (result != 0) goto EXIT;
 	}
-	//ƒƒ^ƒCƒxƒ“ƒg‘—M
+	//ãƒ¡ã‚¿ã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 	else if (pEvent->GetType() == SMEvent::EventMeta) {
 		SMEventMeta eventMeta;
 		eventMeta.Attach(pEvent);
@@ -678,7 +718,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// MIDIƒCƒxƒ“ƒg‘—M
+// MIDIã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 //******************************************************************************
 int SMSequencer::_SendMIDIEvent(
 		unsigned char portNo,
@@ -689,32 +729,32 @@ int SMSequencer::_SendMIDIEvent(
 	unsigned long msg = 0;
 	bool isFiltered = false;
 
-	//ƒƒbƒZ[ƒWæ“¾
+	//ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å–å¾—
 	result = pMIDIEvent->GetMIDIOutShortMsg(&msg);
 	if (result != 0) goto EXIT;
 
-	//MIDIƒCƒxƒ“ƒgƒtƒBƒ‹ƒ^
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆãƒ•ã‚£ãƒ«ã‚¿
 	result = _FilterMIDIEvent(portNo, pMIDIEvent, &isFiltered);
 	if (result != 0) goto EXIT;
 
-	//MIDIƒCƒxƒ“ƒg‘—M
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 	if (!isFiltered) {
-		//ƒƒbƒZ[ƒWo—ÍFo—ÍŠ®—¹‚Ü‚Å§Œä‚ª–ß‚ç‚È‚¢
+		//ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å‡ºåŠ›ï¼šå‡ºåŠ›å®Œäº†ã¾ã§åˆ¶å¾¡ãŒæˆ»ã‚‰ãªã„
 		result = m_OutDevCtrl.SendShortMsg(portNo, msg);
 		if (result != 0) goto EXIT;
 
-		//MIDIƒCƒxƒ“ƒgƒƒbƒZ[ƒWƒ|ƒXƒg
+		//MIDIã‚¤ãƒ™ãƒ³ãƒˆãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ãƒã‚¹ãƒˆ
 		result =  m_EventWatcher.WatchEventMIDI(portNo, pMIDIEvent);
 		if (result != 0) goto EXIT;
 	}
 
-	//ƒm[ƒgON‚ğƒJƒEƒ“ƒg
+	//ãƒãƒ¼ãƒˆONã‚’ã‚«ã‚¦ãƒ³ãƒˆ
 	if (pMIDIEvent->GetChMsg() == SMEventMIDI::NoteOn) {
 		m_NotesCount++;
 	}
 
-	//ƒRƒ“ƒgƒ[ƒ‹ƒ`ƒFƒ“ƒWŠÄ‹ˆ—
-	//  ƒsƒbƒ`ƒxƒ“ƒhŠ´“x‚ğE‚¤‚½‚ßRPN‚ğŠÄ‹‚·‚é
+	//ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ«ãƒã‚§ãƒ³ã‚¸ç›£è¦–å‡¦ç†
+	//  ãƒ”ãƒƒãƒãƒ™ãƒ³ãƒ‰æ„Ÿåº¦ã‚’æ‹¾ã†ãŸã‚RPNã‚’ç›£è¦–ã™ã‚‹
 	if (pMIDIEvent->GetChMsg() == SMEventMIDI::ControlChange) {
 		result = m_EventWatcher.WatchEventControlChange(portNo, pMIDIEvent);
 		if (result != 0) goto EXIT;
@@ -725,7 +765,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// SysExƒCƒxƒ“ƒg‘—M
+// SysExã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 //******************************************************************************
 int SMSequencer::_SendSysExEvent(
 		unsigned char portNo,
@@ -736,10 +776,10 @@ int SMSequencer::_SendSysExEvent(
 	unsigned char* pVarMsg = NULL;
 	unsigned long size = 0;
 
-	//ƒƒbƒZ[ƒWæ“¾
+	//ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å–å¾—
 	pSysExEvent->GetMIDIOutLongMsg(&pVarMsg, &size);
 
-	//ƒƒbƒZ[ƒWo—ÍFo—ÍŠ®—¹‚Ü‚Å§Œä‚ª–ß‚ç‚È‚¢
+	//ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å‡ºåŠ›ï¼šå‡ºåŠ›å®Œäº†ã¾ã§åˆ¶å¾¡ãŒæˆ»ã‚‰ãªã„
 	result = m_OutDevCtrl.SendLongMsg(portNo, pVarMsg, size);
 	if (result != 0) goto EXIT;
 
@@ -748,7 +788,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒƒ^ƒCƒxƒ“ƒg‘—M
+// ãƒ¡ã‚¿ã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 //******************************************************************************
 int SMSequencer::_SendMetaEvent(
 		unsigned char portNo,
@@ -757,47 +797,47 @@ int SMSequencer::_SendMetaEvent(
 {
 	int result = 0;
 
-	//ƒƒ^ƒCƒxƒ“ƒg‚ÍMIDIƒfƒoƒCƒX‚É‘—M‚µ‚È‚¢
+	//ãƒ¡ã‚¿ã‚¤ãƒ™ãƒ³ãƒˆã¯MIDIãƒ‡ãƒã‚¤ã‚¹ã«é€ä¿¡ã—ãªã„
 
-	//ƒeƒ“ƒ|î•ñ
+	//ãƒ†ãƒ³ãƒæƒ…å ±
 	if (pMetaEvent->GetType() == 0x51) {
-		//ƒfƒ‹ƒ^ƒ^ƒCƒ€ŒvZ‚É”½‰f
+		//ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ è¨ˆç®—ã«åæ˜ 
 		m_Tempo = pMetaEvent->GetTempo();
 		if (m_Tempo == 0) {
-			//ƒf[ƒ^ˆÙí
+			//ãƒ‡ãƒ¼ã‚¿ç•°å¸¸
 			result = YN_SET_ERR("Invalid data found.", 0, 0);
 			goto EXIT;
 		}
 
-		//’Ê’m
+		//é€šçŸ¥
 		if (!m_isSkipping) {
 			m_MsgTrans.PostTempo(m_Tempo);
 		}
 	}
 
-	//”q‹L†
+	//æ‹å­è¨˜å·
 	if (pMetaEvent->GetType() == 0x58) {
-		//•ªq•ª•ê‚ğæ“¾
+		//åˆ†å­åˆ†æ¯ã‚’å–å¾—
 		unsigned long numerator = 0;
 		unsigned long denominator = 0;
 		pMetaEvent->GetTimeSignature(&numerator, &denominator);
 		if (denominator == 0) {
-			//ƒf[ƒ^ˆÙí
+			//ãƒ‡ãƒ¼ã‚¿ç•°å¸¸
 			result = YN_SET_ERR("Invalid data found.", numerator, denominator);
 			goto EXIT;
 		}
 		m_BeatNumerator = numerator;
 		m_BeatDenominator = denominator;
 
-		//’Ê’m
+		//é€šçŸ¥
 		if (!m_isSkipping) {
 			m_MsgTrans.PostBeat((unsigned short)numerator, (unsigned short)denominator);
 		}
 
-		//1¬ß‚ ‚½‚è‚Ìƒ`ƒbƒNƒ^ƒCƒ€‚ğXV
+		//1å°ç¯€ã‚ãŸã‚Šã®ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‚’æ›´æ–°
 		m_TickTimeOfBar = (numerator * m_TimeDivision * 4) / denominator;
 
-		//”q‹L†XV‚Ì‚½‚ß1¬ß–ÚŠJn’n“_‚Æ‚µ‚Ä’Ê’m
+		//æ‹å­è¨˜å·æ›´æ–°ã®ãŸã‚1å°ç¯€ç›®é–‹å§‹åœ°ç‚¹ã¨ã—ã¦é€šçŸ¥
 		if (m_PrevBarTickTime != m_TotalTickTime) {
 			m_CurBarNo++;
 			m_PrevBarTickTime = m_TotalTickTime;
@@ -807,12 +847,16 @@ int SMSequencer::_SendMetaEvent(
 		}
 	}
 
+	//ï¿½}ï¿½[ï¿½Jï¿½[
+	if (pMetaEvent->GetType() == 0x58) {
+		
+	}
 EXIT:;
 	return result;
 }
 
 //******************************************************************************
-// ƒ†[ƒU—v‹ˆ—
+// ãƒ¦ãƒ¼ã‚¶è¦æ±‚å‡¦ç†
 //******************************************************************************
 int SMSequencer::_ProcUserRequest(
 		BOOL* pIsContinue
@@ -822,25 +866,25 @@ int SMSequencer::_ProcUserRequest(
 
 	if (m_UserRequest == RequestNone) goto EXIT;
 
-	//‘Sƒgƒ‰ƒbƒNƒm[ƒgƒIƒt
+	//å…¨ãƒˆãƒ©ãƒƒã‚¯ãƒãƒ¼ãƒˆã‚ªãƒ•
 	result = _AllTrackNoteOff();
 	if (result != 0) goto EXIT;
 
 	*pIsContinue = false;
 
-	//ˆê’â~‚ğ—v‹‚³‚ê‚½ê‡
+	//ä¸€æ™‚åœæ­¢ã‚’è¦æ±‚ã•ã‚ŒãŸå ´åˆ
 	if (m_UserRequest == RequestPause) {
 		m_Status = StatusPause;
 		m_MsgTrans.PostPlayStatus(SM_PLAYSTATUS_PAUSE);
 	}
 
-	//’â~‚ğ—v‹‚³‚ê‚½ê‡
+	//åœæ­¢ã‚’è¦æ±‚ã•ã‚ŒãŸå ´åˆ
 	if (m_UserRequest == RequestStop) {
 		m_Status = StatusStop;
 		m_MsgTrans.PostPlayStatus(SM_PLAYSTATUS_STOP);
 	}
 
-	//ƒXƒLƒbƒv‚ğ—v‹‚³‚ê‚½ê‡
+	//ã‚¹ã‚­ãƒƒãƒ—ã‚’è¦æ±‚ã•ã‚ŒãŸå ´åˆ
 	if (m_UserRequest == RequestSkip) {
 		*pIsContinue = true;
 		result = _ProcSkip(m_SkipTargetTime, pIsContinue);
@@ -854,7 +898,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ‘Sƒgƒ‰ƒbƒNƒm[ƒgƒIƒt
+// å…¨ãƒˆãƒ©ãƒƒã‚¯ãƒãƒ¼ãƒˆã‚ªãƒ•
 //******************************************************************************
 int SMSequencer::_AllTrackNoteOff()
 {
@@ -868,7 +912,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// Œ»İæ“¾iƒiƒm•bj
+// ç¾åœ¨æ™‚åˆ»å–å¾—ï¼ˆãƒŠãƒç§’ï¼‰
 //******************************************************************************
 unsigned long long SMSequencer::_GetCurTimeInNano()
 {
@@ -876,14 +920,14 @@ unsigned long long SMSequencer::_GetCurTimeInNano()
 }
 
 //******************************************************************************
-// Ä¶ŠJnƒpƒ‰ƒ[ƒ^‰Šú‰»
+// å†ç”Ÿé–‹å§‹ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿åˆæœŸåŒ–
 //******************************************************************************
 int SMSequencer::_InitializeParamsOnPlayStart()
 {
 	int result = 0;
 	unsigned long deltaTime = 0;
 
-	//‰‰‘tˆÊ’u‚ğ‹È‚Ìæ“ª‚É–ß‚·
+	//æ¼”å¥ä½ç½®ã‚’æ›²ã®å…ˆé ­ã«æˆ»ã™
 	m_PlayIndex = 0;
 	result = m_Track.GetDataSet(m_PlayIndex, &deltaTime, &m_Event, &m_PortNo);
 	if (result != 0) goto EXIT;
@@ -900,7 +944,7 @@ int SMSequencer::_InitializeParamsOnPlayStart()
 	m_PrevBarTickTime = 0;
 	m_NotesCount = 0;
 
-	//ƒCƒxƒ“ƒgƒEƒHƒbƒ`ƒƒ[‰Šú‰»
+	//ã‚¤ãƒ™ãƒ³ãƒˆã‚¦ã‚©ãƒƒãƒãƒ£ãƒ¼åˆæœŸåŒ–
 	result = m_EventWatcher.Initialize(&m_MsgTrans);
 	if (result != 0) goto EXIT;
 
@@ -909,7 +953,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// MIDIƒCƒxƒ“ƒgƒLƒƒƒbƒVƒ…ƒNƒŠƒA
+// MIDIã‚¤ãƒ™ãƒ³ãƒˆã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¯ãƒªã‚¢
 //******************************************************************************
 void SMSequencer::_ClearMIDIEventCache()
 {
@@ -931,7 +975,7 @@ void SMSequencer::_ClearMIDIEventCache()
 }
 
 //******************************************************************************
-// MIDIƒCƒxƒ“ƒgƒtƒBƒ‹ƒ^
+// MIDIã‚¤ãƒ™ãƒ³ãƒˆãƒ•ã‚£ãƒ«ã‚¿
 //******************************************************************************
 int SMSequencer::_FilterMIDIEvent(
 		unsigned char portNo,
@@ -949,62 +993,62 @@ int SMSequencer::_FilterMIDIEvent(
 
 	*pIsFiltered = false;
 
-	//ƒXƒLƒbƒv’†‚Ì‚İƒtƒBƒ‹ƒ^‚·‚é
+	//ã‚¹ã‚­ãƒƒãƒ—ä¸­ã®ã¿ãƒ•ã‚£ãƒ«ã‚¿ã™ã‚‹
 	if (!m_isSkipping) goto EXIT;
 
 	chNo = pMIDIEvent->GetChNo();
 
-	//ƒm[ƒgON/OFF‚Í‘—M‚µ‚È‚¢
+	//ãƒãƒ¼ãƒˆON/OFFã¯é€ä¿¡ã—ãªã„
 	if ((pMIDIEvent->GetChMsg() == SMEventMIDI::NoteOff) ||
 		(pMIDIEvent->GetChMsg() == SMEventMIDI::NoteOn)) {
 		*pIsFiltered = true;
 	}
 
-	//ƒsƒbƒ`ƒxƒ“ƒh‚Í‘—M‚µ‚È‚¢
+	//ãƒ”ãƒƒãƒãƒ™ãƒ³ãƒ‰ã¯é€ä¿¡ã—ãªã„
 	if (pMIDIEvent->GetChMsg() == SMEventMIDI::PitchBend) {
 		*pIsFiltered = true;
 		result = pMIDIEvent->GetMIDIOutShortMsg(&shortMsg);
 		if (result != 0) goto EXIT;
 		
-		//ƒsƒbƒ`ƒxƒ“ƒh‚Ì’l‚ğ‹L‰¯‚·‚éFEn dl dm ‘æ2,3ƒoƒCƒg–Ú‚ğQÆ
+		//ãƒ”ãƒƒãƒãƒ™ãƒ³ãƒ‰ã®å€¤ã‚’è¨˜æ†¶ã™ã‚‹ï¼šEn dl dm ç¬¬2,3ãƒã‚¤ãƒˆç›®ã‚’å‚ç…§
 		pData = (unsigned char*)(&shortMsg);
 		m_CachePitchBend[portNo][chNo][0] = pData[1];
 		m_CachePitchBend[portNo][chNo][1] = pData[2];
 	}
 
-	//ƒRƒ“ƒgƒ[ƒ‹ƒ`ƒFƒ“ƒW‚Ìˆê•”‚Í‘—M‚µ‚È‚¢
+	//ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ«ãƒã‚§ãƒ³ã‚¸ã®ä¸€éƒ¨ã¯é€ä¿¡ã—ãªã„
 	if (pMIDIEvent->GetChMsg() == SMEventMIDI::ControlChange) {
 		ccNo = pMIDIEvent->GetCCNo();
 		ccValue = pMIDIEvent->GetCCValue();
 
-		//CC#1 ƒ‚ƒWƒ…ƒŒ[ƒVƒ‡ƒ“
+		//CC#1 ãƒ¢ã‚¸ãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³
 		if (ccNo == 1) {
 			*pIsFiltered = true;
 			m_CacheCC001_Modulation[portNo][chNo] = ccValue;
 		}
-		//CC#7 ƒ{ƒŠƒ…[ƒ€
+		//CC#7 ãƒœãƒªãƒ¥ãƒ¼ãƒ 
 		else if (ccNo == 7) {
 			*pIsFiltered = true;
 			m_CacheCC007_Volume[portNo][chNo] = ccValue;
 		}
-		//CC#10 ƒpƒ“ƒ|ƒbƒg
+		//CC#10 ãƒ‘ãƒ³ãƒãƒƒãƒˆ
 		else if (ccNo == 10) {
 			*pIsFiltered = true;
 			m_CacheCC010_Panpot[portNo][chNo] = ccValue;
 		}
-		//CC#11 ƒGƒNƒXƒvƒŒƒbƒVƒ‡ƒ“
+		//CC#11 ã‚¨ã‚¯ã‚¹ãƒ—ãƒ¬ãƒƒã‚·ãƒ§ãƒ³
 		else if (ccNo == 11) {
 			*pIsFiltered = true;
 			m_CacheCC011_Expression[portNo][chNo] = ccValue;
 		}
-		//CC#121 ƒŠƒZƒbƒgƒI[ƒ‹ƒRƒ“ƒgƒ[ƒ‰
+		//CC#121 ãƒªã‚»ãƒƒãƒˆã‚ªãƒ¼ãƒ«ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ©
 		else if (ccNo == 121) {
-			//ƒNƒŠƒA‘ÎÛƒpƒ‰ƒ[ƒ^‚ÌƒLƒƒƒbƒVƒ…‚ğ”jŠü‚·‚é
+			//ã‚¯ãƒªã‚¢å¯¾è±¡ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã®ã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚’ç ´æ£„ã™ã‚‹
 			m_CachePitchBend[portNo][chNo][0] = 0xFF;
 			m_CachePitchBend[portNo][chNo][1] = 0xFF;
 			m_CacheCC001_Modulation[portNo][chNo] = 0xFF;
-			//‘ÎÛŠO m_CacheCC007_Volume[portNo][chNo] = 0xFF;
-			//‘ÎÛŠO m_CacheCC010_Panpot[portNo][chNo] = 0xFF;
+			//å¯¾è±¡å¤– m_CacheCC007_Volume[portNo][chNo] = 0xFF;
+			//å¯¾è±¡å¤– m_CacheCC010_Panpot[portNo][chNo] = 0xFF;
 			m_CacheCC011_Expression[portNo][chNo] = 0xFF;
 		}
 	}
@@ -1014,7 +1058,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// MIDIƒCƒxƒ“ƒgƒLƒƒƒbƒVƒ…‘—M
+// MIDIã‚¤ãƒ™ãƒ³ãƒˆã‚­ãƒ£ãƒƒã‚·ãƒ¥é€ä¿¡
 //******************************************************************************
 int SMSequencer::_SendMIDIEventCache()
 {
@@ -1028,32 +1072,32 @@ int SMSequencer::_SendMIDIEventCache()
 	for (index = 0; index < SM_MAX_PORT_NUM; index++) {
 		portNo = (unsigned char)index;
 		for (chNo = 0; chNo < SM_MAX_CH_NUM; chNo++) {
-			//ƒsƒbƒ`ƒxƒ“ƒh
+			//ãƒ”ãƒƒãƒãƒ™ãƒ³ãƒ‰
 			pitchBend[0] = m_CachePitchBend[portNo][chNo][0];
 			pitchBend[1] = m_CachePitchBend[portNo][chNo][1];
 			if (pitchBend[0] < 0xFF) {
 				result = _SendMIDIEventPitchBend(portNo, chNo, pitchBend);
 				if (result != 0) goto EXIT;
 			}
-			//CC#1 ƒ‚ƒWƒ…ƒŒ[ƒVƒ‡ƒ“
+			//CC#1 ãƒ¢ã‚¸ãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³
 			ccValue = m_CacheCC001_Modulation[portNo][chNo];
 			if (ccValue < 0x80) {
 				result = _SendMIDIEventCC(portNo, chNo, 1, ccValue);
 				if (result != 0) goto EXIT;
 			}
-			//CC#7 ƒ{ƒŠƒ…[ƒ€
+			//CC#7 ãƒœãƒªãƒ¥ãƒ¼ãƒ 
 			ccValue = m_CacheCC007_Volume[portNo][chNo];
 			if (ccValue < 0x80) {
 				result = _SendMIDIEventCC(portNo, chNo, 7, ccValue);
 				if (result != 0) goto EXIT;
 			}
-			//CC#10 ƒpƒ“ƒ|ƒbƒg
+			//CC#10 ãƒ‘ãƒ³ãƒãƒƒãƒˆ
 			ccValue = m_CacheCC010_Panpot[portNo][chNo];
 			if (ccValue < 0x80) {
 				result = _SendMIDIEventCC(portNo, chNo, 10, ccValue);
 				if (result != 0) goto EXIT;
 			}
-			//CC#11 ƒGƒNƒXƒvƒŒƒbƒVƒ‡ƒ“
+			//CC#11 ã‚¨ã‚¯ã‚¹ãƒ—ãƒ¬ãƒƒã‚·ãƒ§ãƒ³
 			ccValue = m_CacheCC011_Expression[portNo][chNo];
 			if (ccValue < 0x80) {
 				result = _SendMIDIEventCC(portNo, chNo, 11, ccValue);
@@ -1067,7 +1111,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// MIDIƒCƒxƒ“ƒgƒLƒƒƒbƒVƒ…‘—MFƒsƒbƒ`ƒxƒ“ƒh
+// MIDIã‚¤ãƒ™ãƒ³ãƒˆã‚­ãƒ£ãƒƒã‚·ãƒ¥é€ä¿¡ï¼šãƒ”ãƒƒãƒãƒ™ãƒ³ãƒ‰
 //******************************************************************************
 int SMSequencer::_SendMIDIEventPitchBend(
 		unsigned char portNo,
@@ -1079,11 +1123,11 @@ int SMSequencer::_SendMIDIEventPitchBend(
 	SMEvent event;
 	SMEventMIDI eventMIDI;
 
-	//MIDIƒCƒxƒ“ƒgƒf[ƒ^ì¬
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆãƒ‡ãƒ¼ã‚¿ä½œæˆ
 	event.SetMIDIData(0xE0 | chNo, pPtichBend, 2);
 	eventMIDI.Attach(&event);
 
-	//MIDIƒCƒxƒ“ƒg‘—M
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 	result = _SendMIDIEvent(portNo, &eventMIDI);
 	if (result != 0) goto EXIT;
 
@@ -1092,7 +1136,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// MIDIƒCƒxƒ“ƒgƒLƒƒƒbƒVƒ…‘—MFƒRƒ“ƒgƒ[ƒ‹ƒ`ƒFƒ“ƒW
+// MIDIã‚¤ãƒ™ãƒ³ãƒˆã‚­ãƒ£ãƒƒã‚·ãƒ¥é€ä¿¡ï¼šã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ«ãƒã‚§ãƒ³ã‚¸
 //******************************************************************************
 int SMSequencer::_SendMIDIEventCC(
 		unsigned char portNo,
@@ -1106,13 +1150,13 @@ int SMSequencer::_SendMIDIEventCC(
 	SMEvent event;
 	SMEventMIDI eventMIDI;
 
-	//MIDIƒCƒxƒ“ƒgƒf[ƒ^ì¬
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆãƒ‡ãƒ¼ã‚¿ä½œæˆ
 	data[0] = ccNo;
 	data[1] = ccValue;
 	event.SetMIDIData(0xB0 | chNo, data, 2);
 	eventMIDI.Attach(&event);
 
-	//MIDIƒCƒxƒ“ƒg‘—M
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆé€ä¿¡
 	result = _SendMIDIEvent(portNo, &eventMIDI);
 	if (result != 0) goto EXIT;
 
@@ -1121,7 +1165,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒXƒLƒbƒvˆ—
+// ã‚¹ã‚­ãƒƒãƒ—å‡¦ç†
 //******************************************************************************
 int SMSequencer::_ProcSkip(
 		unsigned long long targetTimeInNanoSec,
@@ -1138,55 +1182,55 @@ int SMSequencer::_ProcSkip(
 	startPlayTime = m_CurPlayTime;
 	startTickTime = m_TotalTickTimeTemp;
 
-	//Œã•ûƒXƒLƒbƒv‚Ìê‡
+	//å¾Œæ–¹ã‚¹ã‚­ãƒƒãƒ—ã®å ´åˆ
 	if (targetTimeInNanoSec < m_CurPlayTime) {
-		//Ä¶ŠJnƒpƒ‰ƒ[ƒ^‰Šú‰»
+		//å†ç”Ÿé–‹å§‹ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿åˆæœŸåŒ–
 		result = _InitializeParamsOnPlayStart();
 		if (result != 0) goto EXIT;
 		
 		m_MsgTrans.PostSkipStart(SM_SKIP_BACK);
 	}
-	//‘O•ûƒXƒLƒbƒv‚Ìê‡
+	//å‰æ–¹ã‚¹ã‚­ãƒƒãƒ—ã®å ´åˆ
 	else {
 		m_MsgTrans.PostSkipStart(SM_SKIP_FORWARD);
 	}
 
-	//MIDIƒCƒxƒ“ƒgƒLƒƒƒbƒVƒ…ƒNƒŠƒA
+	//MIDIã‚¤ãƒ™ãƒ³ãƒˆã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚¯ãƒªã‚¢
 	_ClearMIDIEventCache();
 
-	//w’è‚Ü‚ÅMIDIƒCƒxƒ“ƒg‚ğˆ—‚·‚é
+	//æŒ‡å®šæ™‚åˆ»ã¾ã§MIDIã‚¤ãƒ™ãƒ³ãƒˆã‚’å‡¦ç†ã™ã‚‹
 	m_isSkipping = true;
 	while (*pIsContinue) {
-		//ƒXƒŒƒbƒhƒCƒ“ƒ^[ƒoƒ‹ˆ—
+		//ã‚¹ãƒ¬ãƒƒãƒ‰ã‚¤ãƒ³ã‚¿ãƒ¼ãƒãƒ«å‡¦ç†
 		result = _IntervalProc(pIsContinue);
 		if (result != 0) goto EXIT;
 		
-		//w’è‚É’B‚µ‚½‚çƒXƒLƒbƒvI—¹‚Æ‚·‚é
+		//æŒ‡å®šæ™‚åˆ»ã«é”ã—ãŸã‚‰ã‚¹ã‚­ãƒƒãƒ—çµ‚äº†ã¨ã™ã‚‹
 		if (targetTimeInNanoSec <= m_CurPlayTime) break;
 	}
 	m_isSkipping = false;
 
-	//ƒLƒƒƒbƒVƒ…‘—M
+	//ã‚­ãƒ£ãƒƒã‚·ãƒ¥é€ä¿¡
 	result = _SendMIDIEventCache();
 	if (result != 0) goto EXIT;
 
-	//Ä¶ˆÚ“®
+	//å†ç”Ÿæ™‚åˆ»ç§»å‹•
 	endTickTime = m_TotalTickTimeTemp;
 	_SlidePlaybackTime(startPlayTime, startTickTime, endTickTime);
 
-	//ƒXƒLƒbƒvˆÚ“®æ‚Ìó‘Ô‚ğ’Ê’m
+	//ã‚¹ã‚­ãƒƒãƒ—ç§»å‹•å…ˆã®çŠ¶æ…‹ã‚’é€šçŸ¥
 	m_MsgTrans.PostPlayTime((unsigned long)(m_CurPlayTime/1000000), endTickTime);
 	m_MsgTrans.PostTempo(m_Tempo);
 	m_MsgTrans.PostBeat((unsigned short)m_BeatNumerator, (unsigned short)m_BeatDenominator);
 	m_MsgTrans.PostBar(m_CurBarNo);
 
-	//Ä¶ŠJn‚ğXV
+	//å†ç”Ÿé–‹å§‹æ™‚åˆ»ã‚’æ›´æ–°
 	m_PrevTimerTime = _GetCurTimeInNano();
 
-	//ƒXƒLƒbƒvI—¹
+	//ã‚¹ã‚­ãƒƒãƒ—çµ‚äº†
 	m_MsgTrans.PostSkipEnd(m_NotesCount);
 
-	//‘O•ûƒXƒLƒbƒv‚É‚æ‚éÄ¶I—¹
+	//å‰æ–¹ã‚¹ã‚­ãƒƒãƒ—ã«ã‚ˆã‚‹å†ç”Ÿçµ‚äº†
 	if (!(*pIsContinue)) {
 		_AllTrackNoteOff();
 		m_MsgTrans.PostPlayTime((unsigned long)(m_CurPlayTime/1000000), m_TotalTickTime);
@@ -1199,7 +1243,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// Ä¶ˆÚ“®
+// å†ç”Ÿæ™‚åˆ»ç§»å‹•
 //******************************************************************************
 void SMSequencer::_SlidePlaybackTime(
 		unsigned long long startPlayTime,
@@ -1210,14 +1254,14 @@ void SMSequencer::_SlidePlaybackTime(
 	unsigned long i = 0;
 	unsigned long tickTime = 0;
 	unsigned long tickTimeStep = 0;
-	unsigned long waitTimeInMsec = 10;  //10msec.‚²‚Æ‚É’Ê’m
+	unsigned long waitTimeInMsec = 10;  //10msec.ã”ã¨ã«é€šçŸ¥
 	unsigned long stepNum = 0;
 	bool isRewind = false;
 
-	//Ä¶’Ê’m‰ñ”
+	//å†ç”Ÿæ™‚åˆ»é€šçŸ¥å›æ•°
 	stepNum = m_MovingTimeSpanInMsec / waitTimeInMsec;
 
-	//ƒ`ƒbƒNƒ^ƒCƒ€‚İ’l
+	//ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ åˆ»ã¿å€¤
 	if (startTickTime > endTickTime) {
 		isRewind = true;
 		tickTimeStep = (startTickTime - endTickTime) / stepNum;
@@ -1227,10 +1271,15 @@ void SMSequencer::_SlidePlaybackTime(
 		tickTimeStep = (endTickTime - startTickTime) / stepNum;
 	}
 
-	//Ä¶ˆÚ“®
+	//å†ç”Ÿæ™‚åˆ»ç§»å‹•
 	tickTime = startTickTime;
+	//DX11: also drive the polled tick (m_TotalTickTimeTemp) so the per-frame scroll
+	//follows this slide. The busy-loop above already set it to the END tick; reset it
+	//to the start so the visual scrolls smoothly from start to end (DX9 scrolls via the
+	//PostPlayTime messages below; the DX11 renderer polls m_TotalTickTimeTemp instead).
+	m_TotalTickTimeTemp = startTickTime;
 	for (i = 0; i < stepNum; i ++) {
-		//Ä¶‚ğ’Ê’mFƒ`ƒbƒNƒ^ƒCƒ€‚Ì‚İXV
+		//å†ç”Ÿæ™‚åˆ»ã‚’é€šçŸ¥ï¼šãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã®ã¿æ›´æ–°
 		if (isRewind) {
 			tickTime -= tickTimeStep;
 		}
@@ -1238,16 +1287,19 @@ void SMSequencer::_SlidePlaybackTime(
 			tickTime += tickTimeStep;
 		}
 		m_MsgTrans.PostPlayTime((unsigned long)(startPlayTime/1000000), tickTime);
-		
-		//‘Ò‹@
+		m_TotalTickTimeTemp = tickTime;   //DX11 per-frame poll follows the slide
+
+		//å¾…æ©Ÿ
 		Sleep(waitTimeInMsec);
 	}
+	//land exactly on the target (integer step rounding can leave a small remainder)
+	m_TotalTickTimeTemp = endTickTime;
 
 	return;
 }
 
 //******************************************************************************
-// ƒ^ƒCƒ}[ŒÄ‚Ño‚µ
+// ã‚¿ã‚¤ãƒãƒ¼å‘¼ã³å‡ºã—
 //******************************************************************************
 int SMSequencer::_OnTimer()
 {
@@ -1256,18 +1308,18 @@ int SMSequencer::_OnTimer()
 
 	unsigned long deltaTime = 0;
 
-	//•‚“®¬”“_‰‰Z¸“x‚ğ”{¸“x‚Éİ’è
-	//  ƒ^ƒCƒ}[ŠJn’¼Œã‚É1‰ñ‚¾‚¯Às‚·‚é
+	//æµ®å‹•å°æ•°ç‚¹æ¼”ç®—ç²¾åº¦ã‚’å€ç²¾åº¦ã«è¨­å®š
+	//  ã‚¿ã‚¤ãƒãƒ¼é–‹å§‹ç›´å¾Œã«1å›ã ã‘å®Ÿè¡Œã™ã‚‹
 	if (!(m_FPUCtrl.IsLocked())) {
 		result = m_FPUCtrl.Start(SMFPUCtrl::FPUDouble);
 		if (result != 0) goto EXIT;
 	}
 
-	//ƒXƒŒƒbƒhƒCƒ“ƒ^[ƒoƒ‹ˆ—
+	//ã‚¹ãƒ¬ãƒƒãƒ‰ã‚¤ãƒ³ã‚¿ãƒ¼ãƒãƒ«å‡¦ç†
 	result = _IntervalProc(&isContinue);
 	if (result != 0) goto EXIT;
 
-	//ƒ†[ƒUƒŠƒNƒGƒXƒg‚Ìˆ—
+	//ãƒ¦ãƒ¼ã‚¶ãƒªã‚¯ã‚¨ã‚¹ãƒˆã®å‡¦ç†
 	if (isContinue) {
 		result = _ProcUserRequest(&isContinue);
 		if (result != 0) goto EXIT;
@@ -1284,7 +1336,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒ^ƒCƒ}[ƒR[ƒ‹ƒoƒbƒNŠÖ”
+// ã‚¿ã‚¤ãƒãƒ¼ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯é–¢æ•°
 //******************************************************************************
 void SMSequencer::_TimerCallBack(
 		UINT uTimerID,
