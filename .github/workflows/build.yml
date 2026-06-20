@@ -1,0 +1,95 @@
+name: Build & Package
+
+# mod_mod/main : build, package and publish a runnable zip release.
+# mod_mod/dev  : build only (CI check, no packaging / release).
+on:
+  push:
+    branches:
+      - mod_mod/main
+      - mod_mod/dev
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # cache xmake's downloaded/built packages (ImGui from xrepo) across runs
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/.xmake
+            ~/.xmake
+          key: xmake-${{ runner.os }}-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-${{ runner.os }}-
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Build (xmake)
+        run: |
+          xmake f -p windows -a x64 -m release -y
+          xmake -y
+
+      # the steps below only run for mod_mod/main (dev is a build-only check)
+      - name: Package
+        if: github.ref == 'refs/heads/mod_mod/main'
+        shell: pwsh
+        run: |
+          $dist = "dist/MIDITrail"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          $bin = "build/windows/x64/release"
+          Copy-Item "$bin/MIDITrail.exe" $dist
+          Copy-Item "$bin/*.dll"        $dist           # SMIDILib.dll, YNBaseLib.dll
+          Copy-Item -Recurse "Resources/conf" "$dist/conf"
+          Copy-Item -Recurse "Resources/data" "$dist/data"
+          Copy-Item "readme_mod_mod_ced.txt" $dist -ErrorAction SilentlyContinue
+          Copy-Item "Resources/LICENSE.txt"  $dist -ErrorAction SilentlyContinue
+          Compress-Archive -Path "$dist/*" -DestinationPath "dist/MIDITrail-mod_mod.zip" -Force
+
+      - name: Upload build artifact
+        if: github.ref == 'refs/heads/mod_mod/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MIDITrail-mod_mod
+          path: dist/MIDITrail-mod_mod.zip
+
+      - name: Prepare release metadata
+        if: github.ref == 'refs/heads/mod_mod/main'
+        id: meta
+        shell: pwsh
+        run: |
+          # build date/time in JST
+          $dt   = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow, 'Tokyo Standard Time')
+          $tag  = "build-" + $dt.ToString("yyyyMMdd-HHmmss")
+          $when = $dt.ToString("yyyy-MM-dd HH:mm:ss")
+          # MIDITrail version from the header: "1.3.1 x64 Mod Mod | ..." -> "1.3.1 Mod Mod"
+          $vline = (Select-String -Path MIDITrail/MIDITrailVersion.h -Pattern 'MIDITRAIL_VERSION_STRING_X64').Line
+          $ver = ($vline -replace '.*_T\("','' -replace '".*','' -replace ' x64','' -replace ' x86','' -replace '\s*\|.*','').Trim()
+          "tag=$tag"                        | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "title=Release $ver Build $when"  | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          # body = the latest changelog block from the readme (first "改造点" section
+          # up to the next "改造点", or end of file)
+          $lines = Get-Content readme_mod_mod_ced.txt -Encoding UTF8
+          $idx   = 0..($lines.Count - 1) | Where-Object { $lines[$_] -match '改造点' }
+          $start = $idx[0]
+          $end   = if ($idx.Count -gt 1) { $idx[1] - 1 } else { $lines.Count - 1 }
+          ($lines[$start..$end] -join "`n") | Out-File release_body.txt -Encoding utf8
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/mod_mod/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          body_path: release_body.txt
+          files: dist/MIDITrail-mod_mod.zip
