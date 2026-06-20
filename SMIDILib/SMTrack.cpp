@@ -1,8 +1,8 @@
-//******************************************************************************
+ï»¿//******************************************************************************
 //
 // Simple MIDI Library / SMTrack
 //
-// ƒgƒ‰ƒbƒNƒNƒ‰ƒX
+// ãƒˆãƒ©ãƒƒã‚¯ã‚¯ãƒ©ã‚¹
 //
 // Copyright (C) 2010 WADA Masashi. All Rights Reserved.
 //
@@ -15,6 +15,7 @@
 #include "SMEventMIDI.h"
 #include "SMEventMeta.h"
 #include "SMFPUCtrl.h"
+#include <vector>
 
 using namespace YNBaseLib;
 
@@ -22,7 +23,7 @@ namespace SMIDILib {
 
 
 //******************************************************************************
-// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
+// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 //******************************************************************************
 SMTrack::SMTrack(void)
 // >>> modify 20120728 yossiepon begin
@@ -32,7 +33,7 @@ SMTrack::SMTrack(void)
 }
 
 //******************************************************************************
-// ƒfƒXƒgƒ‰ƒNƒ^
+// ãƒ‡ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 //******************************************************************************
 SMTrack::~SMTrack(void)
 {
@@ -40,7 +41,7 @@ SMTrack::~SMTrack(void)
 }
 
 //******************************************************************************
-// ƒf[ƒ^ƒNƒŠƒA
+// ãƒ‡ãƒ¼ã‚¿ã‚¯ãƒªã‚¢
 //******************************************************************************
 void SMTrack::Clear()
 {
@@ -61,7 +62,7 @@ void SMTrack::Clear()
 }
 
 //******************************************************************************
-// ƒf[ƒ^ƒZƒbƒg’Ç‰Á
+// ãƒ‡ãƒ¼ã‚¿ã‚»ãƒƒãƒˆè¿½åŠ 
 //******************************************************************************
 int SMTrack::AddDataSet(
 		unsigned long deltaTime,
@@ -76,7 +77,7 @@ int SMTrack::AddDataSet(
 
 	index = m_List.GetSize();
 
-	//ƒf[ƒ^ƒZƒbƒgì¬
+	//ãƒ‡ãƒ¼ã‚¿ã‚»ãƒƒãƒˆä½œæˆ
 	ZeroMemory(&dataSet, sizeof(SMDataSet));
 	dataSet.deltaTime = deltaTime;
 	dataSet.eventData.type   = pEvent->GetType();
@@ -85,11 +86,11 @@ int SMTrack::AddDataSet(
 	dataSet.eventData.size   = pEvent->GetDataSize();
 	dataSet.portNo = portNo;
 
-	//ƒCƒxƒ“ƒgƒf[ƒ^‚ª4byteˆÈ“à‚È‚ç\‘¢‘Ì“à‚ÉŠi”[‚·‚é
+	//ã‚¤ãƒ™ãƒ³ãƒˆãƒ‡ãƒ¼ã‚¿ãŒ4byteä»¥å†…ãªã‚‰æ§‹é€ ä½“å†…ã«æ ¼ç´ã™ã‚‹
 	if (pEvent->GetDataSize() <= 4) {
 		memcpy(&(dataSet.eventData.data), pEvent->GetDataPtr(), pEvent->GetDataSize());
 	}
-	//‚»‚êˆÈŠO‚Í•Ê“rƒq[ƒv‚É•Û‚µ‚Äƒ}ƒbƒv‚ÅŠÇ—‚·‚é
+	//ãã‚Œä»¥å¤–ã¯åˆ¥é€”ãƒ’ãƒ¼ãƒ—ã«ä¿æŒã—ã¦ãƒãƒƒãƒ—ã§ç®¡ç†ã™ã‚‹
 	else {
 		try {
 			pExData = new unsigned char[pEvent->GetDataSize()];
@@ -112,7 +113,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒf[ƒ^ƒZƒbƒgæ“¾
+// ãƒ‡ãƒ¼ã‚¿ã‚»ãƒƒãƒˆå–å¾—
 //******************************************************************************
 int SMTrack::GetDataSet(
 		unsigned long index,
@@ -129,12 +130,12 @@ int SMTrack::GetDataSet(
 	result = m_List.GetItem(index, &dataSet);
 	if (result != 0) goto EXIT;
 
-	//ƒfƒ‹ƒ^ƒ^ƒCƒ€
+	//ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ 
 	if (pDeltaTime != NULL) {
 		*pDeltaTime = dataSet.deltaTime;
 	}
 
-	//ƒCƒxƒ“ƒgƒf[ƒ^ˆÊ’u
+	//ã‚¤ãƒ™ãƒ³ãƒˆãƒ‡ãƒ¼ã‚¿ä½ç½®
 	if (dataSet.eventData.size <= 4) {
 		pEventData = dataSet.eventData.data;
 	}
@@ -147,7 +148,7 @@ int SMTrack::GetDataSet(
 		pEventData = exdataitr->second;
 	}
 
-	//ƒCƒxƒ“ƒgƒf[ƒ^“o˜^
+	//ã‚¤ãƒ™ãƒ³ãƒˆãƒ‡ãƒ¼ã‚¿ç™»éŒ²
 	if (pEvent != NULL) {
 		result = pEvent->SetData(
 						dataSet.eventData.type,
@@ -159,7 +160,7 @@ int SMTrack::GetDataSet(
 		if (result != 0) goto EXIT;
 	}
 
-	//ƒ|[ƒg”Ô†
+	//ãƒãƒ¼ãƒˆç•ªå·
 	if (pProtNo != NULL) {
 // >>> modify 20120728 yossiepon begin
 		if(m_OverwritePortNo == -1) {
@@ -176,7 +177,7 @@ EXIT:;
 
 //******************************************************************************
 // >>> modify 20120728 yossiepon begin
-// ƒTƒCƒYæ“¾
+// ã‚µã‚¤ã‚ºå–å¾—
 // <<< modify 20120728 yossiepon end
 //******************************************************************************
 unsigned long SMTrack::GetSize()
@@ -185,7 +186,7 @@ unsigned long SMTrack::GetSize()
 }
 
 //******************************************************************************
-// ƒRƒs[
+// ã‚³ãƒ”ãƒ¼
 //******************************************************************************
 int SMTrack::CopyFrom(
 		SMTrack* pSrcTrack
@@ -197,14 +198,14 @@ int SMTrack::CopyFrom(
 	SMEvent event;
 	unsigned char portNo = 0;
 
-	//TODO: ‚à‚¤­‚µƒCƒ“ƒeƒŠƒWƒFƒ“ƒg‚ÈƒRƒs[‚É‚·‚é
+	//TODO: ã‚‚ã†å°‘ã—ã‚¤ãƒ³ãƒ†ãƒªã‚¸ã‚§ãƒ³ãƒˆãªã‚³ãƒ”ãƒ¼ã«ã™ã‚‹
 
 	if (pSrcTrack == NULL) {
 		result = YN_SET_ERR("Program error.", 0, 0);
 		goto EXIT;
 	}
 
-	//©•ª©g‚ªƒRƒs[Œ³‚È‚ç‰½‚à‚µ‚È‚¢
+	//è‡ªåˆ†è‡ªèº«ãŒã‚³ãƒ”ãƒ¼å…ƒãªã‚‰ä½•ã‚‚ã—ãªã„
 	if (pSrcTrack == this) {
 		goto EXIT;
 	}
@@ -226,7 +227,7 @@ EXIT:;
 // >>> add 20120728 yossiepon begin
 
 //******************************************************************************
-// ƒ|[ƒg”Ô†ã‘‚«
+// ãƒãƒ¼ãƒˆç•ªå·ä¸Šæ›¸ã
 //******************************************************************************
 int SMTrack::OverwritePortNo(short portNo)
 {
@@ -238,7 +239,7 @@ int SMTrack::OverwritePortNo(short portNo)
 }
 
 //******************************************************************************
-// ƒ`ƒƒƒ“ƒlƒ‹”Ô†ã‘‚«
+// ãƒãƒ£ãƒ³ãƒãƒ«ç•ªå·ä¸Šæ›¸ã
 //******************************************************************************
 int SMTrack::OverwriteChNo(short chNo)
 {
@@ -252,7 +253,7 @@ int SMTrack::OverwriteChNo(short chNo)
 
 	for (index = 0; index < GetSize(); index++) {
 
-		//ƒŠƒXƒg‚©‚çƒm[ƒg‚ğæ“¾‚·‚é
+		//ãƒªã‚¹ãƒˆã‹ã‚‰ãƒãƒ¼ãƒˆã‚’å–å¾—ã™ã‚‹
 		result = m_List.GetItem(index, &event);
 		if (result != 0) goto EXIT;
 
@@ -260,7 +261,7 @@ int SMTrack::OverwriteChNo(short chNo)
 			continue;
 		}
 
-		//ƒ`ƒƒƒ“ƒlƒ‹”Ô†‚ğã‘‚«‚µ‚ÄƒŠƒXƒg‚É‘‚«–ß‚·
+		//ãƒãƒ£ãƒ³ãƒãƒ«ç•ªå·ã‚’ä¸Šæ›¸ãã—ã¦ãƒªã‚¹ãƒˆã«æ›¸ãæˆ»ã™
 		unsigned char status = event.GetStatus();
 		event.SetStatus((status & 0xf0) | (chNo & 0x0f));
 
@@ -275,7 +276,7 @@ EXIT:;
 // <<< add 20120728 yossiepon end
 
 //******************************************************************************
-// ƒm[ƒgƒŠƒXƒgæ“¾
+// ãƒãƒ¼ãƒˆãƒªã‚¹ãƒˆå–å¾—
 //******************************************************************************
 int SMTrack::GetNoteList(
 		SMNoteList* pNoteList
@@ -291,7 +292,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒm[ƒgƒŠƒXƒgæ“¾
+// ãƒãƒ¼ãƒˆãƒªã‚¹ãƒˆå–å¾—
 //******************************************************************************
 int SMTrack::GetNoteListWithRealTime(
 		SMNoteList* pNoteList,
@@ -313,7 +314,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒm[ƒgƒŠƒXƒgæ“¾
+// ãƒãƒ¼ãƒˆãƒªã‚¹ãƒˆå–å¾—
 //******************************************************************************
 int SMTrack::_GetNoteList(
 		SMNoteList* pNoteList,
@@ -325,32 +326,36 @@ int SMTrack::_GetNoteList(
 	unsigned long deltaTime = 0;
 	unsigned long totalTime = 0;
 	unsigned char portNo = 0;
-	unsigned long key = 0;
+	unsigned long slot = 0;
 	unsigned long tempo = SM_DEFAULT_TEMPO;
 	double totalRealtime = 0;
-	SMNoteMap noteMap;
-	SMNoteMap::iterator itr;
+	// O(1) note-on/off pairing: active[slot] = note-list index of the currently
+	// sounding note for (port,ch,note), or 0xFFFFFFFF if none. Replaces a std::map
+	// keyed on (port,ch,note) - a big build-time win for dense (Black) MIDI.
+	std::vector<unsigned long> active;
 	SMNote note;
 	SMEvent event;
 	SMEventMIDI midiEvent;
 	SMEventMeta metaEvent;
 	SMFPUCtrl fpuCtrl;
 
-	// timeDivision  = 0 ‚Ìê‡FstartTime, endTime ‚Íƒ`ƒbƒNƒ^ƒCƒ€‚ğİ’è
-	// timeDivision != 0 ‚Ìê‡FstartTime, endTime ‚ÍƒŠƒAƒ‹ƒ^ƒCƒ€‚ğİ’è(msec)
+	// timeDivision  = 0 ã®å ´åˆï¼šstartTime, endTime ã¯ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‚’è¨­å®š
+	// timeDivision != 0 ã®å ´åˆï¼šstartTime, endTime ã¯ãƒªã‚¢ãƒ«ã‚¿ã‚¤ãƒ ã‚’è¨­å®š(msec)
 
 	if (pNoteList == NULL) {
 		result = YN_SET_ERR("Program error.", 0, 0);
 		goto EXIT;
 	}
 
-	//•‚“®¬”“_‰‰Z¸“x‚ğ”{¸“x‚Éİ’è
+	//æµ®å‹•å°æ•°ç‚¹æ¼”ç®—ç²¾åº¦ã‚’å€ç²¾åº¦ã«è¨­å®š
 	result = fpuCtrl.Start(SMFPUCtrl::FPUDouble);
 	if (result != 0) goto EXIT;
 
-	//ƒm[ƒgî•ñ‚Íƒgƒ‰ƒbƒN“o˜^‡‚Åƒm[ƒgƒŠƒXƒg‚É’Ç‰Á‚·‚é
-	//‚·‚È‚í‚¿ƒm[ƒgŠJnƒ`ƒbƒNƒ^ƒCƒ€‚Åƒ\[ƒg‚³‚ê‚é‚æ‚¤‚ÉƒŠƒXƒg‚ğì¬‚·‚é
+	//ãƒãƒ¼ãƒˆæƒ…å ±ã¯ãƒˆãƒ©ãƒƒã‚¯ç™»éŒ²é †ã§ãƒãƒ¼ãƒˆãƒªã‚¹ãƒˆã«è¿½åŠ ã™ã‚‹
+	//ã™ãªã‚ã¡ãƒãƒ¼ãƒˆé–‹å§‹ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã§ã‚½ãƒ¼ãƒˆã•ã‚Œã‚‹ã‚ˆã†ã«ãƒªã‚¹ãƒˆã‚’ä½œæˆã™ã‚‹
 	pNoteList->Clear();
+
+	active.assign((size_t)256 * 16 * 128, 0xFFFFFFFFUL);
 
 	for (index = 0; index < GetSize(); index++) {
 
@@ -362,24 +367,32 @@ int SMTrack::_GetNoteList(
 
 // >>> modify 20120728 yossiepon begin
 
-		//METAƒCƒxƒ“ƒg
+		//METAã‚¤ãƒ™ãƒ³ãƒˆ
 		if (event.GetType() == SMEvent::EventMeta) {
 
 			metaEvent.Attach(&event);
 
 			if (metaEvent.GetType() == 0x51) {
-				//ƒeƒ“ƒ|‚Ìİ’è
+				//ãƒ†ãƒ³ãƒã®è¨­å®š
 				tempo = metaEvent.GetTempo();
 			} else if (metaEvent.GetType() == 0x05) {
 
-				//ÅŒã‚Ìƒm[ƒg‚ğæ“¾
+				//æœ€å¾Œã®ãƒãƒ¼ãƒˆã‚’å–å¾—
+				// A lyric (0x05) attaches to the previously added note. If no note
+				// has been added yet (a lyric/text meta before the first note, e.g.
+				// on a conductor track), there is nothing to attach it to: skip it.
+				// Without this guard GetSize()-1 underflows to 0xFFFFFFFF, GetNote
+				// fails, and the whole track's note extraction aborts -> the merged
+				// note list comes back empty and nothing renders (audio still plays).
+				if (pNoteList->GetSize() == 0) continue;
 				result = pNoteList->GetNote(pNoteList->GetSize() - 1, &note);
 				if (result != 0) goto EXIT;
 
-				//‰ÌŒ‚ğæ“¾
+				//æ­Œè©ã‚’å–å¾—
 				std::string lyric;
 				metaEvent.GetText(&lyric);
-				//‰ÌŒ‚Ìæ“ª‚ªSPC(0x20)ˆÈ~‚Å‚ ‚ê‚ÎA‰ÌŒ‚ğŠi”[‚·‚é
+
+				//æ­Œè©ã®å…ˆé ­ãŒSPC(0x20)ä»¥é™ã§ã‚ã‚Œã°ã€æ­Œè©ã‚’æ ¼ç´ã™ã‚‹
 				if(((unsigned char)lyric.c_str()[0]) > 0x20) {
 					::strncpy_s(note.lyric, sizeof(note.lyric), lyric.c_str(), _TRUNCATE);
 					result = pNoteList->SetNote(pNoteList->GetSize() - 1, &note);
@@ -390,19 +403,21 @@ int SMTrack::_GetNoteList(
 
 // <<< modify 20120728 yossiepon end
 
-		//MIDIƒCƒxƒ“ƒgˆÈŠO‚ÍƒXƒLƒbƒv
+		//MIDIã‚¤ãƒ™ãƒ³ãƒˆä»¥å¤–ã¯ã‚¹ã‚­ãƒƒãƒ—
 		if (event.GetType() != SMEvent::EventMIDI) continue;
 
 		midiEvent.Attach(&event);
 
-		//ƒm[ƒgƒIƒ“
+		//ãƒãƒ¼ãƒˆã‚ªãƒ³
 		if (midiEvent.GetChMsg() == SMEventMIDI::NoteOn) {
-			//ƒ}ƒbƒv‚©‚ç“–ŠYƒm[ƒg‚ğŒŸõ
-			key = _GetNoteKey(portNo, midiEvent.GetChNo(), midiEvent.GetNoteNo());
-			itr = noteMap.find(key);
+			//ãƒãƒƒãƒ—ã‹ã‚‰å½“è©²ãƒãƒ¼ãƒˆã‚’æ¤œç´¢
+			{
+				unsigned char ep = (m_OverwritePortNo != -1) ? (unsigned char)m_OverwritePortNo : portNo;
+				slot = ((unsigned long)ep * 16 + (midiEvent.GetChNo() & 0x0F)) * 128 + (midiEvent.GetNoteNo() & 0x7F);
+			}
 
-			//–¢“o˜^‚Ìê‡
-			if (itr == noteMap.end()) {
+			//æœªç™»éŒ²ã®å ´åˆ
+			if (active[slot] == 0xFFFFFFFFUL) {
 				note.portNo = portNo;
 				note.chNo = midiEvent.GetChNo();
 				note.noteNo = midiEvent.GetNoteNo();
@@ -413,58 +428,59 @@ int SMTrack::_GetNoteList(
 				note.lyric[0] = '\0';
 // <<< add 20120728 yossiepon end
 			}
-			//“o˜^Ï‚İ‚Ìê‡
+			//ç™»éŒ²æ¸ˆã¿ã®å ´åˆ
 			else {
-				//“¯ˆêƒm[ƒg”Ô†‚Åƒm[ƒgOFF‚È‚µ‚Éƒm[ƒgON‚ª˜A‘±‚µ‚½ê‡‚É‘Š“–‚·‚é
-				//MIDI‚Ìd—lã‚Ç‚¤‚¢‚¤ˆµ‚¢‚É‚È‚é‚©‚Í•s–¾
-				//ƒm[ƒg‚ğ‹æØ‚Á‚ÄV‚µ‚¢ƒm[ƒg‚ÌŠJn‚Æ‚·‚é
-				result = pNoteList->GetNote(itr->second, &note);
+				//åŒä¸€ãƒãƒ¼ãƒˆç•ªå·ã§ãƒãƒ¼ãƒˆOFFãªã—ã«ãƒãƒ¼ãƒˆONãŒé€£ç¶šã—ãŸå ´åˆã«ç›¸å½“ã™ã‚‹
+				//MIDIã®ä»•æ§˜ä¸Šã©ã†ã„ã†æ‰±ã„ã«ãªã‚‹ã‹ã¯ä¸æ˜
+				//ãƒãƒ¼ãƒˆã‚’åŒºåˆ‡ã£ã¦æ–°ã—ã„ãƒãƒ¼ãƒˆã®é–‹å§‹ã¨ã™ã‚‹
+				result = pNoteList->GetNote(active[slot], &note);
 				if (result != 0) goto EXIT;
 
-				//I—¹ƒ`ƒbƒNƒ^ƒCƒ€‚ğ‹L˜^‚µ‚ÄƒŠƒXƒg‚É‘‚«–ß‚·
+				//çµ‚äº†ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‚’è¨˜éŒ²ã—ã¦ãƒªã‚¹ãƒˆã«æ›¸ãæˆ»ã™
 				note.endTime = ((timeDivision == 0) ? totalTime : (unsigned long)totalRealtime);
-				result = pNoteList->SetNote(itr->second, &note);
+				result = pNoteList->SetNote(active[slot], &note);
 				if (result != 0) goto EXIT;
 
-				noteMap.erase(itr);
-
-				//V‚µ‚¢ƒm[ƒg
+				//æ–°ã—ã„ãƒãƒ¼ãƒˆ
 				note.velocity = midiEvent.GetVelocity();
 				note.startTime = ((timeDivision == 0) ? totalTime : (unsigned long)totalRealtime);
 				note.endTime = 0;
 			}
-			//I—¹ƒ`ƒbƒNƒ^ƒCƒ€–¢’è‚Ì‚Ü‚Üƒm[ƒgƒŠƒXƒg‚É“o˜^‚·‚é
+			//çµ‚äº†ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ æœªå®šã®ã¾ã¾ãƒãƒ¼ãƒˆãƒªã‚¹ãƒˆã«ç™»éŒ²ã™ã‚‹
 			pNoteList->AddNote(note);
-			//ƒm[ƒgƒŠƒXƒg‚ÌƒCƒ“ƒfƒbƒNƒXˆÊ’u‚ğƒ}ƒbƒv‚É‹L˜^‚·‚é
-			noteMap.insert(SMNoteMapPair(key, (pNoteList->GetSize()-1)));
+			//ï¿½mï¿½[ï¿½gï¿½ï¿½ï¿½Xï¿½gï¿½ÌƒCï¿½ï¿½ï¿½fï¿½bï¿½Nï¿½Xï¿½Ê’uï¿½ï¿½ï¿½Lï¿½^ï¿½ï¿½ï¿½ï¿½
+			active[slot] = pNoteList->GetSize() - 1;
 		}
-		//ƒm[ƒgƒIƒt
+		//ãƒãƒ¼ãƒˆã‚ªãƒ•
 		if (midiEvent.GetChMsg() == SMEventMIDI::NoteOff) {
-			//ƒ}ƒbƒv‚©‚ç“–ŠYƒm[ƒg‚ğŒŸõ
-			key = _GetNoteKey(portNo, midiEvent.GetChNo(), midiEvent.GetNoteNo());
-			itr = noteMap.find(key);
+			//ãƒãƒƒãƒ—ã‹ã‚‰å½“è©²ãƒãƒ¼ãƒˆã‚’æ¤œç´¢
+			{
+				unsigned char ep = (m_OverwritePortNo != -1) ? (unsigned char)m_OverwritePortNo : portNo;
+				slot = ((unsigned long)ep * 16 + (midiEvent.GetChNo() & 0x0F)) * 128 + (midiEvent.GetNoteNo() & 0x7F);
+			}
 
-			if (itr != noteMap.end()) {
-				result = pNoteList->GetNote(itr->second, &note);
+			if (active[slot] != 0xFFFFFFFFUL) {
+				result = pNoteList->GetNote(active[slot], &note);
 				if (result != 0) goto EXIT;
 
-				//I—¹ƒ`ƒbƒNƒ^ƒCƒ€‚ğ‹L˜^‚µ‚ÄƒŠƒXƒg‚É‘‚«–ß‚·
+				//çµ‚äº†ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‚’è¨˜éŒ²ã—ã¦ãƒªã‚¹ãƒˆã«æ›¸ãæˆ»ã™
 				note.endTime = ((timeDivision == 0) ? totalTime : (unsigned long)totalRealtime);
-				result = pNoteList->SetNote(itr->second, &note);
+				result = pNoteList->SetNote(active[slot], &note);
 				if (result != 0) goto EXIT;
 
-				noteMap.erase(itr);
+				active[slot] = 0xFFFFFFFFUL;
 			}
 		}
 	}
 
-	//ƒm[ƒgƒIƒ“‚Ì‚Ü‚ÜI—¹‚µ‚½ê‡‚Íƒm[ƒg‚ğ‹æØ‚Á‚ÄƒŠƒXƒg‚É’Ç‰Á‚·‚é
-	for (itr = noteMap.begin(); itr != noteMap.end(); itr++) {
-		result = pNoteList->GetNote(itr->second, &note);
+	//ãƒãƒ¼ãƒˆã‚ªãƒ³ã®ã¾ã¾çµ‚äº†ã—ãŸå ´åˆã¯ãƒãƒ¼ãƒˆã‚’åŒºåˆ‡ã£ã¦ãƒªã‚¹ãƒˆã«è¿½åŠ ã™ã‚‹
+	for (slot = 0; slot < (unsigned long)active.size(); slot++) {
+		if (active[slot] == 0xFFFFFFFFUL) continue;
+		result = pNoteList->GetNote(active[slot], &note);
 		if (result != 0) goto EXIT;
 
 		note.endTime = ((timeDivision == 0) ? totalTime : (unsigned long)totalRealtime);
-		result = pNoteList->SetNote(itr->second, &note);
+		result = pNoteList->SetNote(active[slot], &note);
 		if (result != 0) goto EXIT;
 	}
 
@@ -476,7 +492,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒ`ƒbƒNƒ^ƒCƒ€‚©‚çÀŠÔ‚Ö‚Ì•ÏŠ·iƒ~ƒŠ•bj
+// ãƒãƒƒã‚¯ã‚¿ã‚¤ãƒ ã‹ã‚‰å®Ÿæ™‚é–“ã¸ã®å¤‰æ›ï¼ˆãƒŸãƒªç§’ï¼‰
 //******************************************************************************
 double SMTrack::_ConvTick2TimeMsec(
 		unsigned long tickTime,
@@ -486,15 +502,15 @@ double SMTrack::_ConvTick2TimeMsec(
 {
 	double timeMsec = 0;
 
-	//(1) l•ª‰¹•„‚ ‚½‚è‚Ì•ª‰ğ”\ division
-	//    —áF48
-	//(2) ƒgƒ‰ƒbƒNƒf[ƒ^‚Ìƒfƒ‹ƒ^ƒ^ƒCƒ€ delta
-	//    •ª‰ğ”\‚Ì’l‚ğ—p‚¢‚Ä•\Œ»‚·‚éŠÔ·
-	//    •ª‰ğ”\‚ª48‚Åƒfƒ‹ƒ^ƒ^ƒCƒ€‚ª24‚È‚ç”ª•ª‰¹•„•ª‚ÌŠÔ·
-	//(3) ƒeƒ“ƒ|İ’èiƒ}ƒCƒNƒ•bj tempo
-	//    l•ª‰¹•„‚ÌÀŠÔŠÔŠu
+	//(1) å››åˆ†éŸ³ç¬¦ã‚ãŸã‚Šã®åˆ†è§£èƒ½ division
+	//    ä¾‹ï¼š48
+	//(2) ãƒˆãƒ©ãƒƒã‚¯ãƒ‡ãƒ¼ã‚¿ã®ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ  delta
+	//    åˆ†è§£èƒ½ã®å€¤ã‚’ç”¨ã„ã¦è¡¨ç¾ã™ã‚‹æ™‚é–“å·®
+	//    åˆ†è§£èƒ½ãŒ48ã§ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ ãŒ24ãªã‚‰å…«åˆ†éŸ³ç¬¦åˆ†ã®æ™‚é–“å·®
+	//(3) ãƒ†ãƒ³ãƒè¨­å®šï¼ˆãƒã‚¤ã‚¯ãƒ­ç§’ï¼‰ tempo
+	//    å››åˆ†éŸ³ç¬¦ã®å®Ÿæ™‚é–“é–“éš”
 	//
-	// ƒfƒ‹ƒ^ƒ^ƒCƒ€‚É‘Î‰‚·‚éÀŠÔŠÔŠuiƒ~ƒŠ•bj
+	// ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ ã«å¯¾å¿œã™ã‚‹å®Ÿæ™‚é–“é–“éš”ï¼ˆãƒŸãƒªç§’ï¼‰
 	//  = (delta / division) * tempo / 1000
 	//  = (delta * tempo) / (division * 1000)
 
@@ -504,7 +520,7 @@ double SMTrack::_ConvTick2TimeMsec(
 }
 
 //******************************************************************************
-// ƒm[ƒg“Á’èƒL[æ“¾
+// ãƒãƒ¼ãƒˆç‰¹å®šã‚­ãƒ¼å–å¾—
 //******************************************************************************
 unsigned long SMTrack::_GetNoteKey(
 		unsigned char portNo,

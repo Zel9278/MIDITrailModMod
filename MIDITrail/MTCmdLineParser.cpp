@@ -1,8 +1,8 @@
-//******************************************************************************
+ï»¿//******************************************************************************
 //
 // MIDITrail / MTCmdLineParser
 //
-// ƒRƒ}ƒ“ƒhƒ‰ƒCƒ“‰ğÍƒNƒ‰ƒX
+// ã‚³ãƒãƒ³ãƒ‰ãƒ©ã‚¤ãƒ³è§£æã‚¯ãƒ©ã‚¹
 //
 // Copyright (C) 2010 WADA Masashi. All Rights Reserved.
 //
@@ -20,7 +20,7 @@ using namespace SMIDILib;
 
 
 //******************************************************************************
-// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
+// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 //******************************************************************************
 MTCmdLineParser::MTCmdLineParser(void)
 {
@@ -29,14 +29,14 @@ MTCmdLineParser::MTCmdLineParser(void)
 }
 
 //******************************************************************************
-// ƒfƒXƒgƒ‰ƒNƒ^
+// ãƒ‡ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
 //******************************************************************************
 MTCmdLineParser::~MTCmdLineParser(void)
 {
 }
 
 //******************************************************************************
-// ‰Šú‰»
+// åˆæœŸåŒ–
 //******************************************************************************
 int MTCmdLineParser::Initialize(
 		LPTSTR pCmdLine
@@ -44,7 +44,7 @@ int MTCmdLineParser::Initialize(
 {
 	int result = 0;
 
-	//ƒRƒ}ƒ“ƒhƒ‰ƒCƒ“‰ğÍ
+	//ã‚³ãƒãƒ³ãƒ‰ãƒ©ã‚¤ãƒ³è§£æ
 	result = _AnalyzeCmdLine(pCmdLine);
 	if (result != 0) goto EXIT;
 
@@ -53,7 +53,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒRƒ}ƒ“ƒhƒ‰ƒCƒ“‰ğÍ
+// ã‚³ãƒãƒ³ãƒ‰ãƒ©ã‚¤ãƒ³è§£æ
 //******************************************************************************
 int MTCmdLineParser::_AnalyzeCmdLine(
 		LPTSTR pCmdLine
@@ -64,22 +64,22 @@ int MTCmdLineParser::_AnalyzeCmdLine(
 	TCHAR* pArg = NULL;
 	SMRcpConv rcpConv;
 
-	//CommandLineToArgvW ‚Í‘¶İ‚·‚é‚ª CommandLineToArgvA ‚Í‘¶İ‚µ‚È‚¢
-	//‚±‚Ì‚½‚ßAPI‚Å‚Ì‰ğÍ‚Í‚ ‚«‚ç‚ß‚Ä __argc, __targv ‚ğ—˜—p‚·‚é
-	//c”O‚È‚ª‚çpCmdLine‚ÍQÆ‚µ‚È‚¢
+	//CommandLineToArgvW ã¯å­˜åœ¨ã™ã‚‹ãŒ CommandLineToArgvA ã¯å­˜åœ¨ã—ãªã„
+	//ã“ã®ãŸã‚APIã§ã®è§£æã¯ã‚ãã‚‰ã‚ã¦ __argc, __targv ã‚’åˆ©ç”¨ã™ã‚‹
+	//æ®‹å¿µãªãŒã‚‰pCmdLineã¯å‚ç…§ã—ãªã„
 
-	//RCP“Ç‚İ‚İ‰Â”ÛŠm”F‚Ì‚½‚ßRCPƒtƒ@ƒCƒ‹•ÏŠ·ƒIƒuƒWƒFƒNƒg‚ğ—pˆÓ‚·‚é
+	//RCPèª­ã¿è¾¼ã¿å¯å¦ç¢ºèªã®ãŸã‚RCPãƒ•ã‚¡ã‚¤ãƒ«å¤‰æ›ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’ç”¨æ„ã™ã‚‹
 	result = rcpConv.Initialize();
 	if (result != 0) goto EXIT;
 
-	//ˆø”‚Ì‰ğÍ
+	//å¼•æ•°ã®è§£æ
 	for (i = 1; i < __argc; i++) {
 		pArg = __targv[i];
 
 		//MessageBox(NULL, pArg, _T(""), MB_OK);
 
-		//ƒtƒ@ƒCƒ‹ƒpƒX
-		//  ƒtƒ@ƒCƒ‹ƒpƒX‚ª•¡”w’è‚³‚ê‚½ê‡‚Íæ“ª‚Ì‚İ‚ğÌ—p‚·‚é
+		//ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹
+		//  ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹ãŒè¤‡æ•°æŒ‡å®šã•ã‚ŒãŸå ´åˆã¯å…ˆé ­ã®ã¿ã‚’æ¡ç”¨ã™ã‚‹
 		if ((_tcslen(m_pFilePath) == 0) && (_tcslen(pArg) > 4)) {
 			if (YNPathUtil::IsFileExtMatch(pArg, ".mid")) {
 				m_pFilePath = pArg;
@@ -90,28 +90,28 @@ int MTCmdLineParser::_AnalyzeCmdLine(
 				m_CmdSwitchStatus[CMDSW_FILE_PATH] = CMDSW_ON;
 			}
 		}
-		//‹N“®Œã‚ÉÄ¶ŠJn
+		//èµ·å‹•å¾Œã«å†ç”Ÿé–‹å§‹
 		if (_tcscmp(pArg, _T("-p")) == 0) {
 			m_CmdSwitchStatus[CMDSW_PLAY] = CMDSW_ON;
 		}
-		//Ä¶I—¹‚ÉƒAƒvƒŠI—¹
+		//å†ç”Ÿçµ‚äº†æ™‚ã«ã‚¢ãƒ—ãƒªçµ‚äº†
 		if (_tcscmp(pArg, _T("-q")) == 0) {
 			m_CmdSwitchStatus[CMDSW_QUIET] = CMDSW_ON;
 		}
-		//ƒfƒoƒbƒOƒ‚[ƒh
+		//ãƒ‡ãƒãƒƒã‚°ãƒ¢ãƒ¼ãƒ‰
 		if (_tcscmp(pArg, _T("-d")) == 0) {
 			m_CmdSwitchStatus[CMDSW_DEBUG] = CMDSW_ON;
 		}
 	}
 
-	//ƒtƒ@ƒCƒ‹ƒpƒX‚ª–¢w’è‚Ìê‡
+	//ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹ãŒæœªæŒ‡å®šã®å ´åˆ
 	if (m_CmdSwitchStatus[CMDSW_FILE_PATH] != CMDSW_ON) {
-		//Ä¶^I—¹ƒtƒ‰ƒO‚Í‹¤‚É–³Œø
+		//å†ç”Ÿï¼çµ‚äº†ãƒ•ãƒ©ã‚°ã¯å…±ã«ç„¡åŠ¹
 		m_CmdSwitchStatus[CMDSW_PLAY] = CMDSW_NONE;
 		m_CmdSwitchStatus[CMDSW_QUIET] = CMDSW_NONE;
 	}
 
-	//Ä¶ƒtƒ‰ƒOON‚Å‚È‚¯‚ê‚ÎI—¹ƒtƒ‰ƒO‚Í–³Œø
+	//å†ç”Ÿãƒ•ãƒ©ã‚°ONã§ãªã‘ã‚Œã°çµ‚äº†ãƒ•ãƒ©ã‚°ã¯ç„¡åŠ¹
 	if (m_CmdSwitchStatus[CMDSW_PLAY] != CMDSW_ON) {
 		m_CmdSwitchStatus[CMDSW_QUIET] = CMDSW_NONE;
 	}
@@ -121,7 +121,7 @@ EXIT:;
 }
 
 //******************************************************************************
-// ƒXƒCƒbƒ`ó‘Ôæ“¾
+// ã‚¹ã‚¤ãƒƒãƒçŠ¶æ…‹å–å¾—
 //******************************************************************************
 int MTCmdLineParser::GetSwitch(
 		unsigned long switchType
@@ -137,7 +137,7 @@ int MTCmdLineParser::GetSwitch(
 }
 
 //******************************************************************************
-// ƒtƒ@ƒCƒ‹ƒpƒXæ“¾
+// ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹å–å¾—
 //******************************************************************************
 const TCHAR* MTCmdLineParser::GetFilePath()
 {
