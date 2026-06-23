@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <IncludePath>$(IncludePath);C:\DXSDK_Jun10\DXSDK\Include</IncludePath>
+    <LibraryPath Condition="'$(Platform)'=='x64'">$(LibraryPath);C:\DXSDK_Jun10\DXSDK\Lib\x64</LibraryPath>
+    <LibraryPath Condition="'$(Platform)'=='Win32'">$(LibraryPath);C:\DXSDK_Jun10\DXSDK\Lib\x86</LibraryPath>
+  </PropertyGroup>
+</Project>
