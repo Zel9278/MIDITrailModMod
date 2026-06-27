@@ -1,4 +1,4 @@
-//******************************************************************************
+﻿//******************************************************************************
 //
 // MIDITrail / MTNoteLyrics11
 //
@@ -21,6 +21,7 @@ using namespace DirectX;
 MTNoteLyrics11::MTNoteLyrics11()
 {
 	m_pDevice = NULL;
+	m_RingMode = false;
 	m_pExtPitchBend = NULL;
 	m_pCpuBuf = NULL;
 	m_VertCapacity = 0;
@@ -91,6 +92,12 @@ int MTNoteLyrics11::Create(
 	result = m_NoteDesign.Initialize(pSceneName, pSeqData);
 	if (result != 0) goto EXIT;
 
+	//ring モードではリング配置用の設計も初期化（位置/worldMove に使用）
+	if (m_RingMode) {
+		result = m_NoteDesignRing.Initialize(pSceneName, pSeqData);
+		if (result != 0) goto EXIT;
+	}
+
 	m_PitchBend.Initialize();
 
 	// realtime (ms) merged note list - carries each note's lyric. The cached list
@@ -105,7 +112,7 @@ int MTNoteLyrics11::Create(
 		}
 	}
 
-	mv = m_NoteDesign.GetWorldMoveVector();
+	mv = m_RingMode ? m_NoteDesignRing.GetWorldMoveVector() : m_NoteDesign.GetWorldMoveVector();
 	m_WorldMove = XMFLOAT3(mv.x, mv.y, mv.z);
 
 	try {
@@ -316,8 +323,11 @@ unsigned long MTNoteLyrics11::_BuildVertices(
 		short pbValue = _Bend()->GetValue(note.portNo, note.chNo);
 		unsigned char pbSens = _Bend()->GetSensitivity(note.portNo, note.chNo);
 
-		D3DXVECTOR3 center = m_NoteDesign.GetNoteBoxCenterPosX(
-				m_CurTickTime, note.portNo, note.chNo, note.noteNo, pbValue, pbSens);
+		D3DXVECTOR3 center = m_RingMode
+				? m_NoteDesignRing.GetNoteBoxCenterPosX(
+					m_CurTickTime, note.portNo, note.chNo, note.noteNo, pbValue, pbSens)
+				: m_NoteDesign.GetNoteBoxCenterPosX(
+					m_CurTickTime, note.portNo, note.chNo, note.noteNo, pbValue, pbSens);
 
 		float coef = m_NoteDesign.GetDecayCoefficient(m_pStatus[i].keyDownRate);
 		float rh = (float)m_pStatus[i].texH * coef / 64.0f;   // Y extent (text height)
@@ -325,10 +335,13 @@ unsigned long MTNoteLyrics11::_BuildVertices(
 		if ((rh <= 0.0f) || (rw <= 0.0f)) continue;
 
 		// nudge in X to keep overlapping lyrics from z-fighting on the flat plane
-		if (center.x < camPos.x) {
-			center.x -= 0.002f * MTNOTELYRICS11_MAX_LYRICS - (i + 1) * 0.002f;
-		} else {
-			center.x -= (i + 1) * 0.002f;
+		// (planar layout only; the ring lays notes around the YZ circle so skip it)
+		if (!m_RingMode) {
+			if (center.x < camPos.x) {
+				center.x -= 0.002f * MTNOTELYRICS11_MAX_LYRICS - (i + 1) * 0.002f;
+			} else {
+				center.x -= (i + 1) * 0.002f;
+			}
 		}
 
 		float alpha = m_NoteDesign.GetRippleAlpha(m_pStatus[i].keyDownRate);

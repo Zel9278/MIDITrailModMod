@@ -17,6 +17,10 @@
 #include "SMFPUCtrl.h"
 #include <vector>
 
+// >>> add 20250616 yossiepon begin
+#include "SMSeqData.h"
+// <<< add 20250616 yossiepon end
+
 using namespace YNBaseLib;
 
 namespace SMIDILib {
@@ -27,7 +31,9 @@ namespace SMIDILib {
 //******************************************************************************
 SMTrack::SMTrack(void)
 // >>> modify 20120728 yossiepon begin
- : m_List(sizeof(SMDataSet), 1000), m_OverwritePortNo(-1)
+// >>> modify 20251101 yossiepon begin
+	: m_List(sizeof(SMDataSet), 1000), m_OverwritePortNo(-1), m_OverwriteChNo(-1)
+// <<< modify 20251101 yossiepon end
 // <<< modify 20120728 yossiepon end
 {
 }
@@ -119,7 +125,7 @@ int SMTrack::GetDataSet(
 		unsigned long index,
 		unsigned long* pDeltaTime,
 		SMEvent* pEvent,
-		unsigned char* pProtNo
+		unsigned char* pPortNo
 	)
 {
 	int result = 0;
@@ -158,15 +164,25 @@ int SMTrack::GetDataSet(
 						dataSet.eventData.size
 					);
 		if (result != 0) goto EXIT;
+
+// >>> add 20251101 yossiepon begin
+		//チャンネル番号の上書き指定あり、かつMIDIイベントの場合
+		if ((m_OverwriteChNo != -1) && (pEvent->GetType() == SMEvent::EventMIDI)) {
+			//チャンネル番号を上書きする
+			unsigned char status = pEvent->GetStatus();
+			status = (status & 0xf0) | (m_OverwriteChNo & 0x0f);
+			pEvent->SetStatus(status);
+		}
+// <<< add 20251101 yossiepon end	
 	}
 
 	//ポート番号
-	if (pProtNo != NULL) {
+	if (pPortNo != NULL) {
 // >>> modify 20120728 yossiepon begin
 		if(m_OverwritePortNo == -1) {
-			*pProtNo = dataSet.portNo;
+			*pPortNo = dataSet.portNo;
 		} else {
-			*pProtNo = (unsigned char)m_OverwritePortNo;
+			*pPortNo = (unsigned char)m_OverwritePortNo;
 		}
 // <<< modify 20120728 yossiepon end	
 	}
@@ -227,7 +243,7 @@ EXIT:;
 // >>> add 20120728 yossiepon begin
 
 //******************************************************************************
-// ポート番号上書き
+// ポート番号上書き指定
 //******************************************************************************
 int SMTrack::OverwritePortNo(short portNo)
 {
@@ -238,40 +254,21 @@ int SMTrack::OverwritePortNo(short portNo)
 	return result;
 }
 
+// >>> modify 20251101 yossiepon begin
+
 //******************************************************************************
-// チャンネル番号上書き
+// チャンネル番号上書き指定
 //******************************************************************************
 int SMTrack::OverwriteChNo(short chNo)
 {
 	int result = 0;
-	unsigned long index = 0;
-	SMEvent event;
 
-	if(chNo == -1) {
-		goto EXIT;
-	}
+	m_OverwriteChNo = chNo;
 
-	for (index = 0; index < GetSize(); index++) {
-
-		//リストからノートを取得する
-		result = m_List.GetItem(index, &event);
-		if (result != 0) goto EXIT;
-
-		if(event.GetType() != SMEvent::EventMIDI) {
-			continue;
-		}
-
-		//チャンネル番号を上書きしてリストに書き戻す
-		unsigned char status = event.GetStatus();
-		event.SetStatus((status & 0xf0) | (chNo & 0x0f));
-
-		result = m_List.SetItem(index, &event);
-		if (result != 0) goto EXIT;
-	}
-
-EXIT:;
 	return result;
 }
+
+// <<< modify 20251101 yossiepon end
 
 // <<< add 20120728 yossiepon end
 
@@ -393,11 +390,13 @@ int SMTrack::_GetNoteList(
 				metaEvent.GetText(&lyric);
 
 				//歌詞の先頭がSPC(0x20)以降であれば、歌詞を格納する
-				if(((unsigned char)lyric.c_str()[0]) > 0x20) {
+				if( (lyric.length() > 0) && (((unsigned char)lyric.c_str()[0]) > 0x20) ) {
+					//note.lyric は char[]（DX11/MBCS）。strncpy_s + _TRUNCATE で安全に格納する。
 					::strncpy_s(note.lyric, sizeof(note.lyric), lyric.c_str(), _TRUNCATE);
 					result = pNoteList->SetNote(pNoteList->GetSize() - 1, &note);
 					if (result != 0) goto EXIT;
 				}
+
 			}
 		}
 
@@ -448,7 +447,7 @@ int SMTrack::_GetNoteList(
 			}
 			//終了チックタイム未定のままノートリストに登録する
 			pNoteList->AddNote(note);
-			//�m�[�g���X�g�̃C���f�b�N�X�ʒu���L�^����
+			//ノートリストのインデックス位置を記録する
 			active[slot] = pNoteList->GetSize() - 1;
 		}
 		//ノートオフ

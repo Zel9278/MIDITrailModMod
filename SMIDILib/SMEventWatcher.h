@@ -4,7 +4,7 @@
 //
 // イベントウォッチャークラス
 //
-// Copyright (C) 2012 WADA Masashi. All Rights Reserved.
+// Copyright (C) 2012-2022 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
@@ -18,6 +18,7 @@
 
 #include "SMEvent.h"
 #include "SMEventMIDI.h"
+#include "SMEventSysMsg.h"
 #include "SMMsgTransmitter.h"
 #include "SMCommon.h"
 
@@ -79,6 +80,7 @@ private:
 	int _WatchEventControlChange2(unsigned char portNo, SMEventMIDI* pMIDIEvent);
 	int _WatchEventMarker(unsigned char portNo, SMEventMIDI* pMIDIEvent);
 	RPN_Type _GetCurRPNType(unsigned char portNo, unsigned char chNo);
+	int _WatchEventSysMsg(unsigned char portNo, SMEventSysMsg* pEventSysMsg);
 	
 };
 
