@@ -27,6 +27,7 @@ MTFirstPersonCam::MTFirstPersonCam(void)
 	m_CamDirPhi = 0.0f;
 	m_CamDirTheta = 0.0f;
 	m_IsMouseCamMode = false;
+	m_InputEnabled = true;
 	m_IsAutoRollMode = false;
 	m_hWnd = NULL;
 
@@ -352,6 +353,10 @@ int MTFirstPersonCam::TransformDX11()
 		}
 	}
 
+	//ImGui ウィンドウ(Config Manager 等)表示中はユーザ入力を無視する。
+	//自動スクロール/自動ロールは _TransformCamPosition / _TransformRolling 側で継続。
+	if (!m_InputEnabled) { dX = 0; dY = 0; dW = 0; }
+
 	_CalcDeltaTime();
 
 	result = _TransformEyeDirection(dX, dY);
@@ -606,6 +611,9 @@ int MTFirstPersonCam::_TransformCamPosition()
 	//移動方向の方位角
 	phi = m_CamDirPhi;
 
+	//ImGui ウィンドウ表示中などはユーザ入力(キーボード/ゲームパッド)による移動を無視。
+	//以下のブロックを丸ごとスキップし、後段の演奏追跡（自動スクロール）だけ実行する。
+	if (m_InputEnabled) {
 	if (m_DIKeyCtrl.IsKeyDown(DIK_LCONTROL) || m_DIKeyCtrl.IsKeyDown(DIK_RCONTROL)) {
 		//左CTRLまたは右CTRLキーが押されている場合はキー入力を無視する
 	}
@@ -686,7 +694,8 @@ int MTFirstPersonCam::_TransformCamPosition()
 	if (m_GamePadCtrl.GetState_Y()) {
 		m_CamVector.y += +(m_VelocityUD * dt);
 	}
-	
+	}  //if (m_InputEnabled)
+
 	//クリッピング
 	if (phi >= 360.0f) {
 		phi -= 360.0f;

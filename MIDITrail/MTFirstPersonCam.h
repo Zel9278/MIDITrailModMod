@@ -85,6 +85,12 @@ public:
 	//マウス視線移動モード登録
 	void SetMouseCamMode(bool isEnable);
 
+	//ユーザ入力(マウス/キーボード/ゲームパッド)の有効・無効
+	//  ImGui ウィンドウ(Config Manager 等)表示中は false にして、DirectInput による
+	//  カメラ操作が裏で効かないようにする（自動スクロール/ロールは継続）。
+	void SetInputEnabled(bool isEnable) { m_InputEnabled = isEnable; }
+	bool IsInputEnabled() const { return m_InputEnabled; }
+
 	//自動回転モード登録
 	void SetAutoRollMode(bool isEnable);
 	void SwitchAutoRllDirecton();
@@ -144,6 +150,7 @@ private:
 	DIMouseCtrl m_DIMouseCtrl;
 	MTGamePadCtrl m_GamePadCtrl;
 	bool m_IsMouseCamMode;
+	bool m_InputEnabled;
 	bool m_IsAutoRollMode;
 	HWND m_hWnd;
 	MTNoteDesign m_NoteDesign;

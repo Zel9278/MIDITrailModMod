@@ -61,6 +61,7 @@ static const char* DXNB11_SHADER =
 	"  float3 vmax   : TEXCOORD1;\n"
 	"  float4 color  : COLOR0;\n"
 	"  float  hidden : TEXCOORD2;\n"
+	"  float  alpha  : TEXCOORD3;\n"   // real note opacity (color.a is the pitch-bend index)
 	"};\n"
 	"struct VSOUT { float4 pos : SV_POSITION; float4 col : COLOR0; float emph : TEXCOORD0; float aflag : TEXCOORD1; };\n"
 	// Two passes (g_Active.w): pass 0 = all notes at base size (no swell/flash/
@@ -86,7 +87,7 @@ static const char* DXNB11_SHADER =
 	"  float bf = (g_Opts.x >= 0.5) ? 1.0 : (active * ((apass >= 0.5) ? 1.0 : 0.0));\n"   // whole channel vs active-pass-only
 	"  wp.y += bf * g_PB[pbIdx >> 2][pbIdx & 3];\n"   // pitch bend in Y
 	"  o.pos = mul(float4(wp, 1.0), g_WVP);\n"
-	"  o.col = float4(i.color.rgb, 1.0);\n"
+	"  o.col = float4(i.color.rgb, i.alpha);\n"   // carry real opacity to the PS
 	"  o.emph = emph;\n"
 	"  o.aflag = (apass >= 0.5) ? active : 0.0;\n"   // 1 while the note is sounding (pass 1)
 	"  return o;\n"
@@ -96,7 +97,7 @@ static const char* DXNB11_SHADER =
 	"float4 PSMain(VSOUT i) : SV_TARGET {\n"
 	"  float3 base = lerp(i.col.rgb, float3(1,1,1), saturate(i.emph * g_Active.z));\n"
 	"  base += i.aflag * g_Opts.yzw;\n"
-	"  return float4(saturate(base), 1.0);\n"
+	"  return float4(saturate(base), i.col.a);\n"   // real note opacity (alpha blending)
 	"}\n";
 
 
@@ -166,8 +167,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 			{ "TEXCOORD", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 12, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,  1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 2, DXGI_FORMAT_R32_FLOAT,       1, 28, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+			{ "TEXCOORD", 3, DXGI_FORMAT_R32_FLOAT,       1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1 },  // real alpha
 		};
-		hr = pDevice->CreateInputLayout(il, 5, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 6, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -229,14 +231,20 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 	}
 
 	{
-		// Note boxes are opaque: the PS always outputs alpha = 1.0, so SrcAlpha/
-		// InvSrcAlpha blending is a mathematical no-op (result = src) yet still costs
-		// a framebuffer read-modify-write per fragment. Disabling blend gives the
-		// identical image but lets the ROP skip the dst read - a real win in the
-		// dense 2D view where many note boxes overdraw the same pixels.
+		// ced 20260627: note boxes now honour the colour's alpha (RRGGBB-AA) so notes
+		// can be drawn semi-transparent. Standard src-over alpha blending. Depth write
+		// stays on (no back-to-front sort), so notes blend over the background/scene;
+		// overlapping notes blend in draw order (acceptable per design). Fully opaque
+		// notes (alpha=FF) look identical to before, at the cost of the ROP dst read.
 		D3D11_BLEND_DESC bd;
 		ZeroMemory(&bd, sizeof(bd));
-		bd.RenderTarget[0].BlendEnable = FALSE;
+		bd.RenderTarget[0].BlendEnable           = TRUE;
+		bd.RenderTarget[0].SrcBlend              = D3D11_BLEND_SRC_ALPHA;
+		bd.RenderTarget[0].DestBlend             = D3D11_BLEND_INV_SRC_ALPHA;
+		bd.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
+		bd.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_ONE;
+		bd.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_INV_SRC_ALPHA;
+		bd.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
 		bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 		hr = pDevice->CreateBlendState(&bd, &s_pBlend);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
@@ -401,6 +409,9 @@ int DXNoteBox11::_CreateInstanceBuffer(
 				? (unsigned long)m_NoteDesign.GetTrackChannelColor(pTrackNo[i], note.chNo)
 				: (unsigned long)m_NoteDesign.GetNoteBoxColor(note.portNo, note.chNo, note.noteNo);
 			unsigned long pbIdx = (unsigned long)(((note.portNo & 0x0F) << 4) | (note.chNo & 0x0F));
+			//real note opacity is the colour's A byte; keep it separately because the
+			//instance colour's A byte is repurposed as the pitch-bend cbuffer index.
+			pInst[i].alpha = (float)((col >> 24) & 0xFF) / 255.0f;
 			pInst[i].color = (col & 0x00FFFFFF) | (pbIdx << 24);
 		}
 		pInst[i].hidden  = 0.0f;

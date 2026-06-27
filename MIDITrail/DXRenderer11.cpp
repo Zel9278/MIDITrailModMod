@@ -1,4 +1,4 @@
-//******************************************************************************
+﻿//******************************************************************************
 //
 // MIDITrail / DXRenderer11
 //
@@ -20,6 +20,7 @@
 #include "MTGridBox11.h"
 #include <d3dcompiler.h>
 #include "MTDashboard11.h"
+#include "MTConfigManager11.h"
 #include "MTTimeIndicator11.h"
 #include "MTPictBoard11.h"
 #include "DXNoteRain11.h"
@@ -56,6 +57,19 @@ DXRenderer11::DXRenderer11()
 	m_Width = 0;
 	m_Height = 0;
 	m_SampleCount = 1;
+	//ced 20260628: SSAA
+	m_SuperSample = 1;
+	m_pSSColor = NULL;
+	m_pSSRTV = NULL;
+	m_pSSSRV = NULL;
+	m_pSSDepth = NULL;
+	m_pSSDSV = NULL;
+	m_pBlitVS = NULL;
+	m_pBlitPS = NULL;
+	m_pBlitCB = NULL;
+	m_pBlitSampler = NULL;
+	m_pBlitNoDepth = NULL;
+	m_pBlitRaster = NULL;
 	m_TestQuadReady = false;
 	m_pKbd11 = NULL;
 	m_pCam11 = NULL;
@@ -66,6 +80,7 @@ DXRenderer11::DXRenderer11()
 	m_pNoteRainLive11 = NULL;
 	m_pGridBox11 = NULL;
 	m_pDashboard11 = NULL;
+	m_pConfigMgr11 = NULL;
 	m_pTimeIndicator11 = NULL;
 	m_pPictBoard11 = NULL;
 	m_pNoteRain11 = NULL;
@@ -124,7 +139,8 @@ DXRenderer11::~DXRenderer11()
 int DXRenderer11::Initialize(
 		HWND hWnd,
 		unsigned long multiSampleType,
-		bool isFullScreen
+		bool isFullScreen,
+		unsigned long superSample
 	)
 {
 	int result = 0;
@@ -138,6 +154,10 @@ int DXRenderer11::Initialize(
 
 	(void)multiSampleType;
 	(void)isFullScreen;
+
+	//ced 20260628: SSAA 倍率（1=off, 2..4）。上限はメモリ/性能のため4倍まで。
+	m_SuperSample = (superSample >= 1) ? superSample : 1;
+	if (m_SuperSample > 4) m_SuperSample = 4;
 
 	m_hWnd = hWnd;
 
@@ -160,11 +180,11 @@ int DXRenderer11::Initialize(
 	// otherwise default to 4x (the swap effect is DISCARD, so a multisampled
 	// backbuffer auto-resolves on Present).
 	{
-		unsigned int wantSamples = ((multiSampleType >= 2) && (multiSampleType <= 8))
-				? (unsigned int)multiSampleType : 8;   // default 8x MSAA
-		unsigned int trySamples[5] = { wantSamples, 8, 4, 2, 1 };
+		unsigned int wantSamples = ((multiSampleType >= 2) && (multiSampleType <= 16))
+				? (unsigned int)multiSampleType : 8;   // default 8x MSAA (16x: ced 20260628)
+		unsigned int trySamples[6] = { wantSamples, 16, 8, 4, 2, 1 };
 		int s = 0;
-		for (s = 0; s < 5; s++) {
+		for (s = 0; s < 6; s++) {
 			ZeroMemory(&sd, sizeof(sd));
 			sd.BufferCount = 2;
 			sd.BufferDesc.Width = width;
@@ -198,6 +218,11 @@ int DXRenderer11::Initialize(
 	if (FAILED(hr)) {
 		result = YN_SET_ERR("DirectX API error.", hr, 0);
 		goto EXIT;
+	}
+
+	//ced 20260628: SSAA 用の縮小ブリットを準備（失敗時は SSAA を無効化して継続）
+	if (m_SuperSample > 1) {
+		if (_InitBlit() != 0) m_SuperSample = 1;
 	}
 
 	result = _CreateTargets(width, height);
@@ -320,6 +345,14 @@ int DXRenderer11::_CreateTargets(
 	vp.MaxDepth = 1.0f;
 	m_pContext->RSSetViewports(1, &vp);
 
+	//ced 20260628: SSAA 用のオフスクリーン（width*ss x height*ss）。失敗したら SSAA 無効化。
+	if (m_SuperSample > 1) {
+		if (_CreateSSTargets(width, height) != 0) {
+			_ReleaseSSTargets();
+			m_SuperSample = 1;
+		}
+	}
+
 EXIT:;
 	return result;
 }
@@ -330,9 +363,114 @@ EXIT:;
 void DXRenderer11::_ReleaseTargets()
 {
 	if (m_pContext != NULL) m_pContext->OMSetRenderTargets(0, NULL, NULL);
+	_ReleaseSSTargets();
 	if (m_pDSV != NULL)      { m_pDSV->Release();      m_pDSV = NULL; }
 	if (m_pDepthTex != NULL) { m_pDepthTex->Release(); m_pDepthTex = NULL; }
 	if (m_pRTV != NULL)      { m_pRTV->Release();      m_pRTV = NULL; }
+}
+
+//******************************************************************************
+// ced 20260628: SSAA オフスクリーン作成／破棄／縮小ブリット
+//******************************************************************************
+int DXRenderer11::_CreateSSTargets(unsigned int width, unsigned int height)
+{
+	int result = 0;
+	HRESULT hr = S_OK;
+	unsigned int sw = width * m_SuperSample;
+	unsigned int sh = height * m_SuperSample;
+	D3D11_TEXTURE2D_DESC td;
+	D3D11_TEXTURE2D_DESC dd;
+
+	if ((m_pDevice == NULL) || (sw == 0) || (sh == 0)) {
+		return YN_SET_ERR("Program error.", 0, 0);
+	}
+
+	//シーン色（単一サンプル、SRV 付き）
+	ZeroMemory(&td, sizeof(td));
+	td.Width = sw; td.Height = sh; td.MipLevels = 1; td.ArraySize = 1;
+	td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	td.SampleDesc.Count = 1; td.SampleDesc.Quality = 0;
+	td.Usage = D3D11_USAGE_DEFAULT;
+	td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+	hr = m_pDevice->CreateTexture2D(&td, NULL, &m_pSSColor);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	hr = m_pDevice->CreateRenderTargetView(m_pSSColor, NULL, &m_pSSRTV);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	hr = m_pDevice->CreateShaderResourceView(m_pSSColor, NULL, &m_pSSSRV);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+
+	//深度
+	ZeroMemory(&dd, sizeof(dd));
+	dd.Width = sw; dd.Height = sh; dd.MipLevels = 1; dd.ArraySize = 1;
+	dd.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	dd.SampleDesc.Count = 1; dd.SampleDesc.Quality = 0;
+	dd.Usage = D3D11_USAGE_DEFAULT;
+	dd.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	hr = m_pDevice->CreateTexture2D(&dd, NULL, &m_pSSDepth);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	hr = m_pDevice->CreateDepthStencilView(m_pSSDepth, NULL, &m_pSSDSV);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+
+EXIT:;
+	return result;
+}
+
+void DXRenderer11::_ReleaseSSTargets()
+{
+	if (m_pSSDSV != NULL)   { m_pSSDSV->Release();   m_pSSDSV = NULL; }
+	if (m_pSSDepth != NULL) { m_pSSDepth->Release(); m_pSSDepth = NULL; }
+	if (m_pSSSRV != NULL)   { m_pSSSRV->Release();   m_pSSSRV = NULL; }
+	if (m_pSSRTV != NULL)   { m_pSSRTV->Release();   m_pSSRTV = NULL; }
+	if (m_pSSColor != NULL) { m_pSSColor->Release(); m_pSSColor = NULL; }
+}
+
+void DXRenderer11::_BlitSSToBackbuffer()
+{
+	D3D11_VIEWPORT vp;
+	ID3D11ShaderResourceView* nullSRV[1] = { NULL };
+	UINT zero = 0;
+	ID3D11Buffer* noVB[1] = { NULL };
+	float bf[4] = { 0, 0, 0, 0 };
+
+	if ((m_pBlitVS == NULL) || (m_pSSSRV == NULL)) return;
+
+	//cbuffer 更新：SS テクセルサイズと倍率（box フィルタ用）
+	if (m_pBlitCB != NULL) {
+		D3D11_MAPPED_SUBRESOURCE ms;
+		unsigned int sw = m_Width * m_SuperSample;
+		unsigned int sh = m_Height * m_SuperSample;
+		if (SUCCEEDED(m_pContext->Map(m_pBlitCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) {
+			float* p = (float*)ms.pData;
+			p[0] = (sw > 0) ? (1.0f / (float)sw) : 0.0f;   // texelSize.x
+			p[1] = (sh > 0) ? (1.0f / (float)sh) : 0.0f;   // texelSize.y
+			p[2] = (float)m_SuperSample;                   // factor
+			p[3] = 0.0f;                                   // pad
+			m_pContext->Unmap(m_pBlitCB, 0);
+		}
+	}
+
+	//バックバッファへ等倍ビューポートで描画
+	ZeroMemory(&vp, sizeof(vp));
+	vp.Width = (float)m_Width; vp.Height = (float)m_Height;
+	vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
+	m_pContext->RSSetViewports(1, &vp);
+	m_pContext->OMSetRenderTargets(1, &m_pRTV, NULL);
+
+	m_pContext->IASetInputLayout(NULL);
+	m_pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	m_pContext->IASetVertexBuffers(0, 1, noVB, &zero, &zero);
+	m_pContext->VSSetShader(m_pBlitVS, NULL, 0);
+	m_pContext->PSSetShader(m_pBlitPS, NULL, 0);
+	m_pContext->PSSetShaderResources(0, 1, &m_pSSSRV);
+	m_pContext->PSSetConstantBuffers(0, 1, &m_pBlitCB);
+	m_pContext->PSSetSamplers(0, 1, &m_pBlitSampler);
+	m_pContext->OMSetDepthStencilState(m_pBlitNoDepth, 0);
+	m_pContext->OMSetBlendState(NULL, bf, 0xFFFFFFFF);
+	m_pContext->RSSetState(m_pBlitRaster);
+	m_pContext->Draw(3, 0);
+
+	//SRV を解放（次フレームでレンダーターゲットとして使うため）
+	m_pContext->PSSetShaderResources(0, 1, nullSRV);
 }
 
 //******************************************************************************
@@ -407,6 +545,12 @@ int DXRenderer11::RenderScene(
 	int result = 0;
 	HRESULT hr = S_OK;
 	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	//ced 20260628: SSAA 用（goto をまたぐ初期化を避けるため先頭で宣言）
+	bool ss = false;
+	unsigned int renderW = 0;
+	unsigned int renderH = 0;
+	ID3D11RenderTargetView* sceneRTV = NULL;
+	ID3D11DepthStencilView* sceneDSV = NULL;
 
 	if (m_pContext == NULL) goto EXIT;
 
@@ -423,13 +567,27 @@ int DXRenderer11::RenderScene(
 
 	_BeginImGuiFrame();
 
-	m_pContext->OMSetRenderTargets(1, &m_pRTV, m_pDSV);
-	m_pContext->ClearRenderTargetView(m_pRTV, clearColor);
-	m_pContext->ClearDepthStencilView(m_pDSV, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
+	//ced 20260628: SSAA 有効時はシーンを SS オフスクリーン（高解像度）へ描画し、
+	//後段でバックバッファへ線形縮小する。無効時は従来どおりバックバッファへ直接描画。
+	ss = (m_SuperSample > 1) && (m_pSSRTV != NULL) && (m_pSSDSV != NULL) && (m_pBlitVS != NULL);
+	renderW = ss ? (m_Width * m_SuperSample) : m_Width;
+	renderH = ss ? (m_Height * m_SuperSample) : m_Height;
+	sceneRTV = ss ? m_pSSRTV : m_pRTV;
+	sceneDSV = ss ? m_pSSDSV : m_pDSV;
+	if (ss) {
+		D3D11_VIEWPORT vp; ZeroMemory(&vp, sizeof(vp));
+		vp.Width = (float)renderW; vp.Height = (float)renderH;
+		vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
+		m_pContext->RSSetViewports(1, &vp);
+	}
+
+	m_pContext->OMSetRenderTargets(1, &sceneRTV, sceneDSV);
+	m_pContext->ClearRenderTargetView(sceneRTV, clearColor);
+	m_pContext->ClearDepthStencilView(sceneDSV, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
 	// M4.15: background image, behind everything (screen space, far-plane z)
 	if ((m_pBackgroundImage11 != NULL) && m_pBackgroundImage11->IsReady()) {
-		m_pBackgroundImage11->DrawDX11(m_pContext, m_Width, m_Height);
+		m_pBackgroundImage11->DrawDX11(m_pContext, renderW, renderH);
 	}
 
 	// M2/M3: draw the scene (note field + keyboard) via the real camera
@@ -547,13 +705,27 @@ int DXRenderer11::RenderScene(
 		m_Logo11.DrawDX11(m_pContext, aspect);
 	}
 
-	// M4: dashboard overlay (on-screen info text), drawn over the scene
+	//ced 20260628: SSAA 有効時はここで SS オフスクリーンをバックバッファへ線形縮小。
+	//ダッシュボード（オーバーレイ文字）と ImGui は縮小の“後”にバックバッファ等倍で描く。
+	//固定ピクセル配置のダッシュボードを SS 解像度で描くと NDC がずれて位置/サイズが
+	//崩れる（=消えて見える）ため、ネイティブ解像度で描くのが正しく綺麗。
+	if (ss) {
+		_BlitSSToBackbuffer();
+	}
+
+	// M4: dashboard overlay (on-screen info text), drawn over the scene at native res
 	if ((m_pDashboard11 != NULL) && m_pDashboard11->IsReady()) {
 		m_pDashboard11->DrawDX11(m_pContext, m_Width, m_Height);
 	}
 
-	// ImGui draws no overlay during normal frames; it stays initialized only for
-	// the loading screen. File open is via the Win32 menu / drag-drop.
+	// Mod Mod: Config Manager (ImGui) - GUI editor for conf/*.ini, toggled from
+	// Options -> Config Manager. Drawn as an interactive ImGui window over the scene.
+	if (m_pConfigMgr11 != NULL) {
+		m_pConfigMgr11->RenderImGui();
+	}
+
+	// ImGui draws no other overlay during normal frames; it stays initialized for
+	// the loading screen too. File open is via the Win32 menu / drag-drop.
 
 	ImGui::EndFrame();
 	ImGui::Render();
@@ -881,6 +1053,104 @@ void DXRenderer11::_DrawSceneComponents(const XMMATRIX& viewProj, const XMFLOAT3
 		XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
 		m_pNoteLyrics11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
 	}
+}
+
+//******************************************************************************
+// equirectangular pipeline (fullscreen triangle that samples the scene cubemap)
+//******************************************************************************
+//******************************************************************************
+// ced 20260628: SSAA 縮小ブリット（フルスクリーン三角形で SS テクスチャを線形サンプル）
+//******************************************************************************
+static const char* DXR11_BLIT_SHADER =
+	"Texture2D g_Tex : register(t0);\n"
+	"SamplerState g_Samp : register(s0);\n"
+	"cbuffer BlitCB : register(b0) { float2 g_TexelSize; float g_Factor; float g_Pad; };\n"
+	"struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };\n"
+	"VSOut VSMain(uint id : SV_VertexID) {\n"
+	"  VSOut o; float2 t = float2((id << 1) & 2, id & 2);\n"
+	"  o.pos = float4(t.x * 2.0 - 1.0, 1.0 - t.y * 2.0, 0.0, 1.0);\n"
+	"  o.uv = t; return o;\n"
+	"}\n"
+	// box downsample: average the f x f source texels that map to this output pixel.
+	// a single bilinear tap only blends 2x2, so 3x/4x SSAA would still alias.
+	"float4 PSMain(VSOut i) : SV_TARGET {\n"
+	"  int f = (int)(g_Factor + 0.5);\n"
+	"  if (f < 1) f = 1;\n"
+	"  float4 sum = float4(0,0,0,0);\n"
+	"  [loop] for (int y = 0; y < f; y++) {\n"
+	"    [loop] for (int x = 0; x < f; x++) {\n"
+	"      float2 off = float2((x + 0.5 - f * 0.5) * g_TexelSize.x,\n"
+	"                          (y + 0.5 - f * 0.5) * g_TexelSize.y);\n"
+	"      sum += g_Tex.SampleLevel(g_Samp, i.uv + off, 0.0);\n"
+	"    }\n"
+	"  }\n"
+	"  return sum / (float)(f * f);\n"
+	"}\n";
+
+int DXRenderer11::_InitBlit()
+{
+	if (m_pBlitVS != NULL) return 0;   // already built
+	if (m_pDevice == NULL) return YN_SET_ERR("Program error.", 0, 0);
+
+	HRESULT hr = S_OK;
+	int result = 0;
+	ID3DBlob* pVS = NULL; ID3DBlob* pPS = NULL; ID3DBlob* pErr = NULL;
+
+	hr = D3DCompile(DXR11_BLIT_SHADER, strlen(DXR11_BLIT_SHADER), NULL, NULL, NULL, "VSMain", "vs_4_0", 0, 0, &pVS, &pErr);
+	if (FAILED(hr) || (pVS == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
+	hr = D3DCompile(DXR11_BLIT_SHADER, strlen(DXR11_BLIT_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPS, &pErr);
+	if (FAILED(hr) || (pPS == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
+
+	hr = m_pDevice->CreateVertexShader(pVS->GetBufferPointer(), pVS->GetBufferSize(), NULL, &m_pBlitVS);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	hr = m_pDevice->CreatePixelShader(pPS->GetBufferPointer(), pPS->GetBufferSize(), NULL, &m_pBlitPS);
+	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+
+	{
+		D3D11_BUFFER_DESC cb; ZeroMemory(&cb, sizeof(cb));
+		cb.ByteWidth = sizeof(float) * 4;   // texelSize.xy + factor + pad
+		cb.Usage = D3D11_USAGE_DYNAMIC;
+		cb.BindFlags = D3D11_BIND_CONSTANT_BUFFER; cb.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		hr = m_pDevice->CreateBuffer(&cb, NULL, &m_pBlitCB);
+		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	}
+	{
+		D3D11_SAMPLER_DESC sd; ZeroMemory(&sd, sizeof(sd));
+		sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+		sd.MaxLOD = D3D11_FLOAT32_MAX;
+		hr = m_pDevice->CreateSamplerState(&sd, &m_pBlitSampler);
+		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	}
+	{
+		D3D11_DEPTH_STENCIL_DESC dd; ZeroMemory(&dd, sizeof(dd));
+		dd.DepthEnable = FALSE; dd.StencilEnable = FALSE;
+		hr = m_pDevice->CreateDepthStencilState(&dd, &m_pBlitNoDepth);
+		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	}
+	{
+		D3D11_RASTERIZER_DESC rd; ZeroMemory(&rd, sizeof(rd));
+		rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; rd.DepthClipEnable = TRUE;
+		hr = m_pDevice->CreateRasterizerState(&rd, &m_pBlitRaster);
+		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+	}
+
+EXIT:;
+	if (pVS != NULL) pVS->Release();
+	if (pPS != NULL) pPS->Release();
+	if (pErr != NULL) pErr->Release();
+	if (result != 0) _ReleaseBlit();
+	return result;
+}
+
+void DXRenderer11::_ReleaseBlit()
+{
+	if (m_pBlitRaster != NULL)  { m_pBlitRaster->Release();  m_pBlitRaster = NULL; }
+	if (m_pBlitNoDepth != NULL) { m_pBlitNoDepth->Release(); m_pBlitNoDepth = NULL; }
+	if (m_pBlitSampler != NULL) { m_pBlitSampler->Release(); m_pBlitSampler = NULL; }
+	if (m_pBlitCB != NULL)      { m_pBlitCB->Release();      m_pBlitCB = NULL; }
+	if (m_pBlitPS != NULL)      { m_pBlitPS->Release();      m_pBlitPS = NULL; }
+	if (m_pBlitVS != NULL)      { m_pBlitVS->Release();      m_pBlitVS = NULL; }
 }
 
 //******************************************************************************
@@ -1248,6 +1518,7 @@ void DXRenderer11::Terminate()
 	m_ImContext = NULL;
 	m_Logo11.Release();
 	_ReleaseTargets();
+	_ReleaseBlit();   //ced 20260628: SSAA 縮小ブリット
 	// Release the shared static pipelines so they rebuild on the next device.
 	// These are created once (InitPipeline early-returns if already built); after
 	// a device recreation (AA / window-size change) they would otherwise keep
