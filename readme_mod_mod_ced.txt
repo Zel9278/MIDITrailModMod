@@ -1,6 +1,6 @@
 MIDITrail DirectX 11 移植・ライブモニタ全シーン対応・360度動画出力 ほか
 
-MIDITrail 1.3.1 Mod Mod ced_20260621
+MIDITrail 1.4.1 Mod Mod ced_20260627
 GitHub: https://github.com/Zel9278/MIDITrailModMod
 （yossiepon 版 mod をベースに改造）
 
@@ -28,6 +28,283 @@ In short: install xmake ( https://xmake.io ) and run `xmake`, OR install vcpkg
 build MIDITrail.sln. ImGui is fetched from the package manager automatically.
 
 ────────────────────────────────────────────────────────
+改造点 20260629：AMD動画エンコーダ ＋ 鍵盤テクスチャ関連
+
+・[FIX][独自] Config Manager(ImGui) を開いて閉じた後にマウスで見回せなくなる問題を修正
+　→従来は開いた時にマウスカメラを強制 OFF するだけで、閉じても戻していなかった。
+　　開いた瞬間に状態を退避（カーソルを使えるよう一時 OFF）、閉じた瞬間に元へ復元する。
+・[FIX][独自] ロード後（特にドラッグ&ドロップ）にカメラ操作が効かなくなる問題を修正
+　→根本原因：DirectInput は DISCL_FOREGROUND のため、ウィンドウが非アクティブのまま
+　　MIDI をロードすると DI を取得できず、キーボード/マウス(カメラ)が操作不能になっていた
+　　（メニュー等をクリックしてウィンドウがアクティブになると直る、の理由）。
+　　対策(1) ロード完了時に SetForegroundWindow / SetFocus でウィンドウを必ずアクティブ化。
+　　対策(2) DI の GetDeviceState 失敗時は再取得して1回リトライ、それでも駄目なら状態を
+　　　　　　ゼロクリア（前回値での凍結＝キー押しっぱ/無反応を防ぐ）。失敗判定は特定エラー
+　　　　　　コードだけでなく FAILED 全般に拡大（0x8007000c 等も復帰対象）。キー/マウス両方。
+
+・[NEW][独自] 動画出力に AMD GPU ハードウェアエンコーダを追加
+　→コーデック選択に「H.264 (AMF, AMD GPU)」「H.265/HEVC (AMF, AMD GPU)」を追加。
+　　ffmpeg の h264_amf / hevc_amf を使用（-quality quality -rc cqp -qp_i/-qp_p）。
+　　NVIDIA(NVENC) / Intel(QSV) / CPU(x264/x265) に続く第4の HW エンコーダ。
+・[CHG][独自] 鍵盤画像を ini で指定できるよう [Bitmap] に Keyboard 項目を明示追加
+　→PianoRoll 2D/3D とその Live の conf に `Keyboard=data\Keyboard.png` を追加
+　　（Rain 系は元から記載あり）。既定は従来と同じ data\Keyboard.png。
+　　Release はビルド時に conf がコピーされるので、ここを差し替えれば鍵盤画像を変更できる。
+・[NEW][独自][実験的] 無限鍵盤（背景の fake 鍵盤を不要にする）
+　→NotLive の PianoRoll 2D/3D で、0-127 の外にもオクターブパターンを延長して鍵盤が
+　　無限に続くように見せる。カメラの可視範囲外のオクターブは描画しない（負荷対策）。
+　　・既存の 1 オクターブ分(0-11鍵)の未押下ジオメトリを静的ブロックとしてコピーし、
+　　　オクターブ幅で下方向(note<0)と上方向(note>127、128-131 は部分タイルで隙間なく)に
+　　　タイル描画。拡張部は装飾（音が無いので光らない）。
+　　・conf `[PianoKeyboard] InfiniteKeyboard=1` で有効化（既定 0=OFF、実験的）。
+　　・ON のときは KeyDispRangeStart/End を無視して全 128 鍵表示（クリップ範囲と
+　　　拡張タイルの隙間＝違和感を防ぐため）。
+　　・128鍵固定配列（押鍵アニメ等）は不変＝低リスク。
+
+────────────────────────────────────────────────────────
+Mod 20260629: AMD video encoder + keyboard texture
+
+* [NEW][original] AMD GPU hardware video encoder for export: "H.264 (AMF, AMD GPU)"
+  and "H.265/HEVC (AMF, AMD GPU)" (ffmpeg h264_amf / hevc_amf). Joins NVENC / QSV / CPU.
+* [CHG][original] Keyboard image is now listed in conf [Bitmap] (Keyboard=data\Keyboard.png)
+  for PianoRoll 2D/3D + Live (Rain already had it), so it can be swapped per scene.
+* [NEW][original][experimental] Infinite keyboard (so people no longer hand-build a fake
+  background keyboard). On non-live PianoRoll 2D/3D, the octave pattern is extended beyond
+  note 0-127 in both directions and camera-culled (off-screen octaves are not drawn). A
+  static, unpressed one-octave block (notes 0-11) is tiled by octave width below note 0 and
+  above note 127 (with a partial tile for 128-131 so there is no gap). Extension keys are
+  decorative (no light-up). Enable via conf [PianoKeyboard] InfiniteKeyboard=1 (default 0).
+  When enabled, KeyDispRangeStart/End are ignored (full 0-127 keyboard) so the clipped
+  range and the extension tiles do not leave a gap.
+  The fixed 128-key arrays / key-press animation are untouched (low risk).
+
+────────────────────────────────────────────────────────
+改造点 20260627-1：リリース後の不具合修正（20260628）
+
+・[FIX][独自] Config Manager の色項目判定を改善
+　→以前は「値がちょうど 8桁16進」というだけで色とみなしていたため、
+　　NumberOfStars=10000000 のような 8桁の数値までカラーピッカーになっていた不具合を修正。
+　　判定を「キー名が color / rgb / rgba で“終わる” かつ 値が 6桁(RGB) または
+　　8桁(RGBA) の16進」に変更した。これにより：
+　　・ActiveKeyColorDuration / ActiveKeyColorTailRate / NoteColorType のように
+　　　Color を含むが色でないキーを誤検出しない（末尾一致のため）。
+　　・BackGroundRGB=000000 のような 6桁RGB（アルファ無し）もカラーピッカーで編集可能に。
+　　・8桁(NoteRGBA / ActiveKeyColor 等)はアルファ付き、6桁はアルファ無しで編集し、
+　　　元の桁形式（6/8）のまま書き戻す。
+
+・[NEW][独自] 色設定ダイアログ（Options → Color → パレット編集）でアルファ（透明度）を
+　編集できるようにした
+　→Windows 標準の色選択ダイアログ(ChooseColor)は OS 仕様でアルファ非対応。そこで：
+　　(1) スウォッチを押すと自作の RGBA ピッカー（MTColorPickerDlg）が開く。
+　　    ・HSV の2Dフィールド（彩度×明度）＋色相バー＋透明度バーを**ドラッグ**して選べる
+　　    ・R/G/B/A のスライダー＋数値入力欄＋hex 欄でも調整できる
+　　    ・プレビューは左半分＝不透明 / 右半分＝透明度あり(市松)で確認できる（ImGui風）
+　　    オーナー描画は DIB 一括転送にして**ちらつきを解消**（当初プレビューがちらついた）。
+　　(2) 各色の hex 欄を RGB(6桁)化し、その右に専用アルファ欄(0–255)を追加（手入力用）。
+　　OK 時に RGB＋アルファを合成してパレットへ反映。Ch.1-16 / Background / Grid Line /
+　　Counter / グラデーション Start・End すべてに対応。
+
+・[NEW][独自] アンチエイリアシングを強化（Options → Graphic）
+　(1) MSAA 16x 対応：レンダラ側が 8x で頭打ちだったのを 16x まで要求できるよう拡張
+　　　（設定ダイアログは元から 16x まで対応。GPU が 16x MSAA をサポートしていれば有効、
+　　　 非対応なら自動で 8x 以下にフォールバック）。
+　(2) SSAA（スーパーサンプリング）追加：Graphic 設定に「SSAA」コンボ（OFF/2x/3x/4x）を
+　　　新設。有効時は 3D シーンを内部的に N倍解像度のオフスクリーンへ描画し、
+　　　factor×factor の平均（box フィルタ）でバックバッファへ縮小合成する。MSAA が苦手な
+　　　テクスチャ内部やシェーディングのジャギーにも効き、どの GPU でも使える。
+　　　（当初 bilinear 1タップで 3x/4x がジャギー残りだったため box フィルタに修正）
+　　　設定キーは Graphic.ini [Anti-aliasing] SuperSample（1=OFF, 2..4）。
+　　　※高負荷（4x = 面積16倍）。Black MIDI 等では重くなるので注意。
+　　　※ダッシュボード(ファイル名/カウンタ)と ImGui は SS 縮小の“後”にバックバッファ
+　　　　等倍で描画する。固定ピクセル配置の文字を SS 解像度で描くと NDC がずれて消える
+　　　　不具合があったため修正（テキストはネイティブ解像度の方が綺麗）。
+　[NOTE] BOM 無しだった DXRenderer11 / MTNoteLyrics11 に UTF-8 BOM を付与
+　　　（日本語コメント追加に伴う CP932 誤認警告 C4819 を解消）。
+
+・[CHG][独自] NoteColorType=CHANNELTRACK の配色方式を変更
+　→従来は (track,channel) を黄金角で連続色相にするだけでカラーパレット未使用だった。
+　　新方式：各チャンネルで「最初に現れたトラック」はそのチャンネル色（パレット[ch]）、
+　　同じチャンネルを共有する2本目以降のトラックは (track,channel) の決定論ハッシュ
+　　（Knuth 乗算）でパレット16色へ分散。1ch に複数トラックが乗る曲でもトラック毎に
+　　色が分かれ、かつ設定したカラーパレットがそのまま反映される。MTNoteDesign に
+　　m_FirstTrackForChannel[16] を持たせ、ノート順に on-the-fly で主トラックを判定
+　　（Initialize で曲ごとにリセット）。Box / Rain / Ring の各ノートに適用。
+
+* [FIX][original] Config Manager color-field detection improved.
+  Previously any value that was exactly 8 hex digits was treated as a color, so a
+  plain number such as NumberOfStars=10000000 wrongly became a color picker. A field
+  is now treated as a color only if the KEY name ends with color/rgb/rgba AND the
+  value is 6 (RGB) or 8 (RGBA) hex digits:
+  - keys that merely contain "Color" but are not colors (ActiveKeyColorDuration,
+    ActiveKeyColorTailRate, NoteColorType) are excluded (suffix match);
+  - 6-digit RGB (e.g. BackGroundRGB=000000) is now supported (no-alpha picker);
+  - 8-digit values keep the alpha bar; the original digit width is preserved on save.
+
+* [NEW][original] Alpha (transparency) editing in the Color palette dialog
+  (Options -> Color -> edit a palette). The Windows ChooseColor dialog cannot edit
+  alpha (OS limitation), so: (1) clicking a swatch now opens a custom RGBA picker
+  (MTColorPickerDlg): a draggable HSV 2D field (saturation x value) + a hue bar, plus
+  R/G/B/A sliders, numeric boxes and a hex box, and a checkerboard transparency preview.
+  Owner-draw uses one-shot DIB blits so it does not flicker. (2) each color's hex box is
+  RGB (6 digits) with a dedicated alpha field (0-255) next to it for manual entry. On OK
+  the RGB and alpha are combined into the palette. Applies to Ch.1-16, Background, Grid
+  Line, Counter, and the gradation Start/End colors.
+
+* [NEW][original] Stronger anti-aliasing (Options -> Graphic).
+  (1) 16x MSAA: the renderer was capped at 8x; it now requests up to 16x (the dialog
+      already listed 16x). Works if the GPU supports 16x MSAA, else falls back to <=8x.
+  (2) SSAA (supersampling): a new "SSAA" combo (OFF/2x/3x/4x). When on, the 3D scene is
+      rendered to an offscreen target at NxN resolution and downscaled to the backbuffer
+      with an f x f box average (a single bilinear tap only blends 2x2, so 3x/4x would
+      still alias). It antialiases texture interiors and shading that MSAA cannot, and
+      works on any GPU. Config key: Graphic.ini [Anti-aliasing] SuperSample (1=off, 2..4).
+      Note: 4x = 16x the pixels, heavy on black-MIDI scenes.
+
+* [CHG][original] NoteColorType=CHANNELTRACK recolouring method changed.
+  It used to just spread (track,channel) around the hue wheel (golden angle), ignoring
+  the palette. Now: the first track seen on each channel gets that channel's palette
+  colour; additional tracks sharing the channel get a deterministic hash (Knuth) into
+  the 16-colour palette. Multi-track-per-channel songs get distinct per-track colours
+  while still honouring the configured palette. MTNoteDesign tracks the first track per
+  channel on the fly (reset each Initialize); applied to box / rain / ring notes.
+
+────────────────────────────────────────────────────────
+改造点 20260627：本家 1.4.1 をマージ ＋ 独自機能追加
+
+・[NEW][独自] Config Manager を追加（Options → Config Manager...）
+　→conf/ の PianoRoll 系シーン設定 .ini（3D/2D/Rain/Ring とその Live 版）を
+　　GUI(ImGui) で直接編集できる。Player.ini / Video.ini 等は編集対象外。
+　　・ファイルをコンボで選択、[section] は折りたたみ、key=value は入力欄で編集。
+　　　コメント(;)・行順は保持して保存する。
+　　・色の項目はカラーピッカー（スウォッチ＋パレット＋アルファ）で編集できる。
+　　　（色判定の条件と不具合修正の詳細は「改造点 20260627-1」を参照）
+　　・選択肢の項目はコンボ（ドロップダウン）で選択できる：
+　　　NoteColorType（CHANNEL/SCALE/CHANNELTRACK）、ActiveKeyColorType（STANDARD/NOTE）、
+　　　SrcBlend/DestBlend（ZERO/ONE/SRCALPHA/INVSRCALPHA/DESTALPHA/INVDESTALPHA）。
+　　・Save すると現在のシーンを自動で再構築して変更を即反映。
+　　・ウィンドウ表示中はカメラ操作が裏で効かないようガード。カメラは DirectInput で
+　　　マウス/キー/パッドを直接読むため、表示中はカメラのユーザ入力自体を停止し
+　　　（自動スクロール/ロールは継続）、マウスカメラ掴み(カーソル非表示)も解除する。
+
+
+・[UPDATE] 本家 yossiepon 版 1.4.1 (mod. 20251101) をマージ
+　→共有エンジン SMIDILib の 1.4.1 修正を全面取り込み：
+　　・[FIX] 歌詞読込時のバッファサイズ誤りによるメモリ破壊の修正を反映
+　　　（DX11 は歌詞を char で扱うため、安全な strncpy_s+_TRUNCATE 経路を維持）
+　　・[FIX] MIDI 追加読込時のチャンネル番号上書きが効かない不具合の修正
+　　　（GetDataSet 読み出し時に遅延適用する 1.4.1 方式を採用）
+　　・[ADD] RIFF(RMID) ヘッダのスキップ対応／トラック終端の寛容なスキップ処理
+　　・[ADD] アクティブノートのベロシティ追跡と、シーク時の Note Off/On 再送
+　　　（All Notes Off 非対応音源での音残り対策）／全ポート Sound Off
+・[KEEP] Mod Mod の軽量パーサー／再生エンジンはそのまま維持（1.4.1 へ退行させない）：
+　→SMFileReader のメモリマップ読み込み・読込進捗コールバック・32bit 上限ガード
+　→SMSeqData のトラックマージを min-heap による k-way マージ（O(N log T)）に維持
+　→SMTrack のノートオン/オフ対応付けを O(1) フラット配列（黒MIDI 連打対応）で維持
+　→SMSequencer の黒MIDI catch-up ループ（1tick で滞留イベントを一括処理）を維持
+　→シークの DX9 スライド追従（GetCurrentTickTime ポーリング）を維持
+・[NEW] 1.4.1 の新規アプリ機能を DX11/MBCS アプリへ移植：
+　　・[File] フォルダを開く（フォルダ選択ダイアログ／IFileOpenDialog）
+　　・[File] 前ファイル／次ファイル（フォルダ内の MIDI を順送り）
+　　・[File] フォルダ演奏（曲終了で次ファイルへ自動送り。最後で停止）
+　　・[View] My Viewpoint 1〜3（視点の保存／呼び出し。シーン別に設定ファイルへ保存）
+　　　※当初 m_pScene(常にNULL)経由で何も動かなかったため、DX11 カメラ(m_FpCam11)を
+　　　　直接読み書きする実装に修正（自動Viewpointと同じ X/Y/Z/Phi/Theta/Roll 形式）
+・[FIX] 同じ表示モードのまま曲を切り替える/ウィンドウをリサイズ/AA変更すると、視点が
+　　毎回デフォルト(または最後に保存した位置)へ戻ってしまう不具合を修正
+　→_SetupDX11Scene で「同一シーンの再セットアップ」を検知し、その場合は現在の視点を
+　　now-line相対で退避→再適用して、ユーザが合わせたカメラ位置を保持する
+　　（表示モードを切り替えた時・初回ロード時は従来どおりデフォルト＋保存値を採用）
+　　・[View] メニューバー表示切替（非表示時はウィンドウ上端にマウスを乗せると
+　　　一時的にメニューが出る＝本家1.4.1と同じ挙動。DX11 で漏れていた分を追加）
+　　・[View] Auto save view settings（Mod Mod 独自）：本家の Auto save viewpoint の
+　　　直下に追加したトグル。ON にすると View の表示設定（Piano Keyboard/Ripple/
+　　　Pitch Bend/Pitch Bend Whole Channel/Stars/Counter/Background Image/
+　　　Time Indicator/Grid Box/Single Keyboard）を再起動後も保持する
+　　　（[Scene] セクションへ保存。終了時とトグル切替時に書き出し、起動時に復元）
+　　・[Ring] PianoRollRing の歌詞表示（1.4.1 の目玉機能）を DX11 へ移植。
+　　　MTNoteLyrics11 に ring モードを追加し、位置決めと world 移動を MTNoteDesignRing
+　　　から取得（タイミング/色は既存の平面用設計を流用＝ini 値共通）。リングのノートと
+　　　同じ world フレーム（RotX(roll)×Trans(worldMove)）で完全整合。再生時のみ表示し
+　　　Ripple トグルに連動。
+　　※フォルダ内ファイル列挙は Unicode(WCHAR)、本アプリは MBCS のため
+　　　m_LoadFilePathW 経由で Unicode パスを保持しつつ char 経路へ橋渡しして読み込む。
+・[NEW] 1.4.1 のカラーパレット設定 UI を統合（Option → Color...）。
+　　・パレット0(デフォルト)＝現行シーン ini の色そのまま（退行なし）。
+　　　ユーザパレット 1〜6 を作成・編集し、選択でノート色を切替。
+　　・ノート色（16ch）とグリッド線色を選択パレットから取得するよう MTNoteDesign を配線。
+　　・Mod 独自のカラー処理（ActiveKeyColor・emissive・CaptionRGBA）は別系統で ini のまま温存。
+　　・パレットのインポート/エクスポートダイアログも同梱。
+　　・[NEW] 透明度（アルファ）を編集可能化。色テキスト欄を編集可(EDITTEXT)にし、
+　　　8桁 RGBA 16進（末尾2桁＝アルファ）を直接入力して透明度を設定できる。
+　　　（Windows の色選択は RGB のみのため、アルファはテキスト欄で指定）
+　　・[NEW] DX11 の 3D/2D ピアノロールのノート描画にアルファブレンドを追加し、
+　　　ノートの透明度が実際に反映されるようにした（従来は不透明固定）。
+　　　深度書込は維持（ソートなし）のため、重なり順は描画順依存。
+　　　alpha=FF のノートは従来同様の見た目（黒MIDI等ではブレンド分の負荷あり）。
+　　※背景色・カウンタ色のパレット適用、および Ring/Rain ビューのノート透明度は
+　　　今回未対応（要望あれば対応）。
+・[NB] AMD Radeon 向け ripple 修正（D3D9 固定機能のブレンド変更）は未移植。
+　　DX11 の描画経路と非互換／upstream でも未検証のため。要望があれば個別に対応。
+
+Mod 20260627: merged upstream 1.4.1 + original features
+
+*[NEW][original] Config Manager (Options -> Config Manager...): a built-in ImGui GUI
+  editor for the PianoRoll scene conf files (3D/2D/Rain/Ring and their Live variants);
+  Player.ini / Video.ini and others are intentionally not editable here. Pick a file
+  from the combo; [sections] are collapsible, key=value rows are edit fields; comments
+  (;) and line order are preserved on save. Colour fields (8-digit RRGGBBAA hex values
+  - NoteRGBA / ActiveKeyColor / GridLine etc.) are edited with a colour picker
+  (swatch + palette + alpha). Enumerated keys use a combo (dropdown): NoteColorType
+  (CHANNEL/SCALE/CHANNELTRACK), ActiveKeyColorType (STANDARD/NOTE), SrcBlend/DestBlend
+  (ZERO/ONE/SRCALPHA/INVSRCALPHA/DESTALPHA/INVDESTALPHA). Saving rebuilds the current scene so the
+  change applies immediately. While the window is open the camera is frozen against user
+  input: the camera reads mouse/keys/pad via DirectInput (which bypasses Win32/ImGui),
+  so its user input is disabled (auto-scroll/roll continue) and the mouse-cam grab
+  (hidden cursor) is released so the cursor can drive the ImGui UI.
+
+
+*[UPDATE] Merged upstream yossiepon 1.4.1 (mod. 20251101).
+  Engine (SMIDILib) fixes from 1.4.1 fully integrated:
+  - lyrics buffer-size heap-corruption fix (DX11 keeps the safe char strncpy_s path),
+  - "channel overwrite on appended MIDI" fix (1.4.1 deferred-apply via GetDataSet),
+  - RIFF (RMID) header skip + tolerant track-end skipping,
+  - active-note velocity tracking + Note Off/On resend on seek (for synths without
+    All Notes Off) + all-port Sound Off.
+*[KEEP] Mod Mod's lightweight parser/playback engine preserved (no regression to 1.4.1):
+  memory-mapped SMF read + load-progress callback + 32-bit cap guard; min-heap k-way
+  track merge; O(1) flat-array note on/off pairing (Black MIDI); the Black-MIDI
+  catch-up loop in the sequencer; and the smooth DX9-style seek slide.
+*[NEW] Ported 1.4.1's new app features into the DX11/MBCS app:
+  - Open Folder (IFileOpenDialog folder picker),
+  - Previous / Next file (navigate MIDI files in the folder),
+  - Folder Playback (auto-advance to the next file when a song ends; stops at the last),
+  - My Viewpoint 1-3 (save/restore camera viewpoints per scene, in the config file),
+  - Menu Bar toggle,
+  - PianoRollRing lyrics (1.4.1's headline ring feature) ported to DX11: MTNoteLyrics11
+    gained a ring mode that takes positions + world-move from MTNoteDesignRing (timing/
+    colour stay on the planar design = shared ini values), so lyrics lay on the ring in
+    the exact same world frame as the ring notes. Playback only, tied to the Ripple toggle.
+  (Folder enumeration is Unicode/WCHAR; the app is MBCS, so Unicode paths are kept via
+   m_LoadFilePathW and bridged into the existing char load path.)
+*[NEW] Integrated 1.4.1's colour-palette config UI (Option -> Color...):
+  - palette 0 (default) = the current scene's ini colours (no regression); users can
+    create/edit palettes 1-6 and switch note colours by selecting one,
+  - MTNoteDesign now sources the 16 channel colours and the grid-line colour from the
+    selected palette; the Mod colour features (ActiveKeyColor / emissive / CaptionRGBA)
+    stay ini-based and untouched,
+  - palette import/export dialogs are included.
+  - [NEW] alpha (transparency) is editable: the colour text fields are now editable
+    (EDITTEXT); type an 8-digit RRGGBBAA hex (last 2 = alpha) to set transparency
+    (the Windows colour picker is RGB-only, so alpha is set via the text field),
+  - [NEW] the DX11 3D/2D piano-roll note renderer now alpha-blends, so note
+    transparency is actually shown (notes used to be forced opaque). Depth write is
+    kept (no sort) so overlap order is draw-order dependent; alpha=FF looks identical
+    to before (with the blend cost on dense/Black MIDI).
+  (Background/counter palette wiring and Ring/Rain note transparency are not done yet.)
+*[NB] The D3D9 AMD-Radeon ripple fix was NOT ported (incompatible with the DX11 render
+  path / unverified upstream). Can be done on request.
+
+────────────────────────────────────────────────────────
 改造点 20260623：
 
 ・[FIX] 鍵盤アニメーションを DX9 と同等に修正
@@ -46,8 +323,13 @@ build MIDITrail.sln. ImGui is fetched from the package manager automatically.
 　　データ破壊・誤カウントを防止
 　→上限到達で安全に打ち切り、「読めた分を表示しますか？」を Yes/No で確認
 ・[FIX] 再生/モニタリング中でないのに左クリックでマウスがグラブされる不具合を修正
-　→マウスカメラのトグルを再生/一時停止/モニタ中のみに制限。停止・曲アンロード時は
-　　グラブを自動解除（カーソルが戻る）
+　→曲アンロード(タイトル/曲なし)時のみ左クリックでのグラブを抑止。停止・曲アンロード
+　　時は曲停止に伴いグラブを自動解除（カーソルが戻る）
+　→（20260628 修正）当初は停止中もトグルを禁止していたが、DX9 では停止中でもマウス
+　　視点が可能だったため、曲ロード済みなら停止中でもマウスカメラ切替を許可するよう緩和
+　→（20260628 修正2）さらに、停止時にマウスカメラ掴みを自動解除していたのを止め、
+　　曲アンロード(NoData)時のみ解除に変更。これで停止中もそのままマウスで見回せる
+　　（カーソルを戻したい時は左クリックでトグル off）。キーボード(WASD)は元々停止中も可。
 ・[FIX] シーク（1／2 キー）を DX9 と同等の滑らかなスクロールへ修正
 　→移動先まで MovingTimeSpanInMsec かけてスライド（瞬間移動を解消）。
 　　本家の _SlidePlaybackTime をそのまま使う形に

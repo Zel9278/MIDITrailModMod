@@ -4,7 +4,7 @@
 //
 // イベントウォッチャークラス
 //
-// Copyright (C) 2012 WADA Masashi. All Rights Reserved.
+// Copyright (C) 2012-2022 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
@@ -12,6 +12,7 @@
 #include "YNBaseLib.h"
 #include "SMEventWatcher.h"
 #include <iostream>
+#include "SMEventSysMsg.h"
 
 using namespace YNBaseLib;
 
@@ -58,6 +59,7 @@ int SMEventWatcher::WatchEvent(
 {
 	int result = 0;
 	SMEventMIDI eventMIDI;
+	SMEventSysMsg eventSysMsg;
 	
 	if (pEvent->GetType() == SMEvent::EventMIDI) {
 		eventMIDI.Attach(pEvent);
@@ -83,6 +85,13 @@ int SMEventWatcher::WatchEvent(
 			result = _WatchEventMarker(portNo, &eventMIDI);
 			if (result != 0) goto EXIT;
 		}
+	}
+	else if (pEvent->GetType() == SMEvent::EventSysMsg) {
+		eventSysMsg.Attach(pEvent);
+
+		//システムメッセージイベント監視
+		result = _WatchEventSysMsg(portNo, &eventSysMsg);
+		if (result != 0) goto EXIT;
 	}
 	
 EXIT:;
@@ -349,6 +358,58 @@ int SMEventWatcher::_WatchEventControlChange2(
 		m_pMsgTrans->PostAllNoteOff(portNo, chNo);
 	}
 	
+	return result;
+}
+
+//******************************************************************************
+// システムメッセージイベント監視処理
+//******************************************************************************
+int SMEventWatcher::_WatchEventSysMsg(
+		unsigned char portNo,
+		SMEventSysMsg* pEventSysMsg
+	)
+{
+	int result = 0;
+
+	//現状は何もしない
+	goto EXIT;
+
+	switch (pEventSysMsg->GetSysMsg()) {
+		case SMEventSysMsg::Common_QuarterFrame:
+			OutputDebugString(_T("Common_QuarterFrame\n"));
+			break;
+		case SMEventSysMsg::Common_SongPositionPointer:
+			OutputDebugString(_T("Common_SongPositionPointer\n"));
+			break;
+		case SMEventSysMsg::Common_SongSelect:
+			OutputDebugString(_T("Common_SongSelect\n"));
+			break;
+		case SMEventSysMsg::Common_TuneRequest:
+			OutputDebugString(_T("Common_TuneRequest\n"));
+			break;
+		case SMEventSysMsg::RealTime_TimingClock:
+			OutputDebugString(_T("RealTime_TimingClock\n"));
+			break;
+		case SMEventSysMsg::RealTime_Start:
+			OutputDebugString(_T("RealTime_Start\n"));
+			break;
+		case SMEventSysMsg::RealTime_Continue:
+			OutputDebugString(_T("RealTime_Continue\n"));
+			break;
+		case SMEventSysMsg::RealTime_Stop:
+			OutputDebugString(_T("RealTime_Stop\n"));
+			break;
+		case SMEventSysMsg::RealTime_ActiveSensing:
+			OutputDebugString(_T("RealTime_ActiveSensing\n"));
+			break;
+		case SMEventSysMsg::RealTime_SystemReset:
+			OutputDebugString(_T("RealTime_SystemReset\n"));
+			break;
+		default:
+			break;
+	}
+
+EXIT:;
 	return result;
 }
 

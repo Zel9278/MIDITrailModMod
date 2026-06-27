@@ -84,8 +84,9 @@ private:
 	struct DXNB11_INSTANCE {
 		float vmin[3];
 		float vmax[3];
-		unsigned long color;   // D3DCOLOR 0xAARRGGBB (read as B8G8R8A8_UNORM)
+		unsigned long color;   // D3DCOLOR 0xAARRGGBB (RGB used; A byte = pitch-bend index)
 		float hidden;
+		float alpha;           // real note opacity 0..1 (from the colour's A byte) - ced 20260627
 	};
 
 	MTNoteDesign m_NoteDesign;

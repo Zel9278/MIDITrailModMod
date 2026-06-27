@@ -46,7 +46,8 @@ public:
 	void Release();
 
 	int DrawDX11(ID3D11DeviceContext* pContext, const DirectX::XMMATRIX& viewProj,
-			const DirectX::XMFLOAT4& lightDir, float rollAngle);
+			const DirectX::XMFLOAT4& lightDir, float rollAngle,
+			const DirectX::XMFLOAT3& camPos = DirectX::XMFLOAT3(0, 0, 0));
 
 	// current playback tick: drives the keyboard's X follow position AND the
 	// key-press animation (tick-based, so it is robust to dropped note on/off
@@ -137,6 +138,21 @@ private:
 
 	SubKbd m_Subs[MTKBD11_MAX_KEYBOARDS];
 	unsigned long m_NumKbd;
+
+	// ced 20260629: infinite keyboard (NotLive box 2D/3D). A static, unpressed one-octave
+	// block (notes 0-11) is tiled by octave width below note 0 and above note 127, with
+	// camera-range culling, so the keyboard appears to extend forever. Off by default
+	// ([PianoKeyboard] InfiniteKeyboard); decorative (extension keys don't light up).
+	bool          m_InfiniteKbd;            // enabled (conf flag) AND not live
+	DXPrimitive11 m_OctaveBlock;            // static unpressed geometry for one octave (notes 0-11)
+	bool          m_HasOctaveBlock;
+	float         m_OctaveWidthX;           // local-X width of one octave (12 semitones)
+	unsigned long m_OctaveKeyPrim[13];      // prim offset within the block for key boundary 0..12
+	int  _BuildOctaveBlock(ID3D11Device* pDevice, ID3D11DeviceContext* pContext,
+			const void* pCpuVB, const unsigned long* pCpuIB);
+	void _DrawInfiniteExtension(ID3D11DeviceContext* pContext, const DirectX::XMMATRIX& mainWorld,
+			const DirectX::XMMATRIX& viewProj, const DirectX::XMFLOAT4& lightDir,
+			const DirectX::XMFLOAT3& camPos);
 
 	int _ApplyKeyStates(ID3D11DeviceContext* pContext, SubKbd* pSub, unsigned long elapsedMs);
 	void _AdvanceWindow(SubKbd* pSub, unsigned long tick);

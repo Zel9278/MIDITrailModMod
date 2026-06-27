@@ -4,7 +4,7 @@
 //
 // ピアノキーボード描画クラス
 //
-// Copyright (C) 2010-2019 WADA Masashi. All Rights Reserved.
+// Copyright (C) 2010-2025 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
@@ -1710,6 +1710,9 @@ int MTPianoKeyboard::Draw(
 	pD3DDevice->SetTextureStageState(0, D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
 	pD3DDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
 	pD3DDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+	//  次ステージ無効化
+	pD3DDevice->SetTextureStageState(1, D3DTSS_COLOROP,   D3DTOP_DISABLE);
+	pD3DDevice->SetTextureStageState(1, D3DTSS_ALPHAOP,   D3DTOP_DISABLE);
 
 	//テクスチャフィルタ
 	pD3DDevice->SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
@@ -1923,6 +1926,14 @@ void MTPianoKeyboard::GetKeyVertexRange(unsigned char noteNo, unsigned long* pVe
 	if (noteNo >= SM_MAX_NOTE_NUM) { if (pVertexPos) *pVertexPos = 0; if (pVertexNum) *pVertexNum = 0; return; }
 	if (pVertexPos != NULL) *pVertexPos = m_BufInfo[noteNo].vertexPos;
 	if (pVertexNum != NULL) *pVertexNum = m_BufInfo[noteNo].vertexNum;
+}
+
+//ced 20260629: per-key index range (for the infinite-keyboard octave tile block)
+void MTPianoKeyboard::GetKeyIndexRange(unsigned char noteNo, unsigned long* pIndexPos, unsigned long* pIndexNum)
+{
+	if (noteNo >= SM_MAX_NOTE_NUM) { if (pIndexPos) *pIndexPos = 0; if (pIndexNum) *pIndexNum = 0; return; }
+	if (pIndexPos != NULL) *pIndexPos = m_BufInfo[noteNo].indexPos;
+	if (pIndexNum != NULL) *pIndexNum = m_BufInfo[noteNo].indexNum;
 }
 
 //******************************************************************************

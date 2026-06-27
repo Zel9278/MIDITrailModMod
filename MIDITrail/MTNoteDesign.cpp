@@ -13,6 +13,7 @@
 #include "DXColorUtil.h"
 #include "MTParam.h"
 #include "MTConfFile.h"
+#include "MTColorConf.h"
 #include "MTNoteDesign.h"
 #include <math.h>
 #include <algorithm>
@@ -60,6 +61,11 @@ int MTNoteDesign::Initialize(
 	unsigned long index = 0;
 	unsigned long portIndex = 0;
 	unsigned char portNo = 0;
+
+	//ced 20260628: CHANNELTRACK の「各chの最初のトラック」マップを曲ごとにリセット
+	for (index = 0; index < 16; index++) {
+		m_FirstTrackForChannel[index] = -1;
+	}
 
 	//ライブモニタ向け設定
 	if (pSeqData == NULL) {
@@ -598,27 +604,28 @@ D3DXCOLOR MTNoteDesign::GetTrackChannelColor(
 		unsigned char chNo
 	)
 {
-	// spread (track,channel) pairs evenly around the hue wheel using the golden
-	// angle (137.508 deg); collisions only after many cycles, visually distinct.
-	int idx = ((int)trackNo * 16) + (int)chNo;
-	float hue = fmodf((float)idx * 137.508f, 360.0f);
-	float s = 0.7f;
-	float v = 1.0f;
+	// ced 20260628: CHANNELTRACK の配色方式を変更。
+	//   - 各チャンネルの「最初に現れたトラック」はそのチャンネル色（パレット[ch]）。
+	//   - 同じチャンネルを共有する2本目以降のトラックは (track,channel) の決定論ハッシュで
+	//     パレット16色のいずれかへ分散して色を分ける。
+	//   ノート順に呼ばれる前提で「最初のトラック」を on-the-fly に記録する
+	//   （m_FirstTrackForChannel は Initialize でリセット）。
+	unsigned char ch = (chNo < 16) ? chNo : 0;
 
-	// HSV -> RGB
-	float c = v * s;
-	float hp = hue / 60.0f;
-	float x = c * (1.0f - fabsf(fmodf(hp, 2.0f) - 1.0f));
-	float r = 0.0f, g = 0.0f, b = 0.0f;
-	if      (hp < 1.0f) { r = c; g = x; b = 0; }
-	else if (hp < 2.0f) { r = x; g = c; b = 0; }
-	else if (hp < 3.0f) { r = 0; g = c; b = x; }
-	else if (hp < 4.0f) { r = 0; g = x; b = c; }
-	else if (hp < 5.0f) { r = x; g = 0; b = c; }
-	else                { r = c; g = 0; b = x; }
-	float m = v - c;
+	if (m_FirstTrackForChannel[ch] < 0) {
+		m_FirstTrackForChannel[ch] = (int)trackNo;   //このchで最初に現れたトラック
+	}
 
-	return D3DXCOLOR(r + m, g + m, b + m, 1.0f);
+	if (m_FirstTrackForChannel[ch] == (int)trackNo) {
+		//主トラック：チャンネル色
+		return m_NoteColor[ch];
+	}
+
+	//副トラック：決定論ハッシュ（Knuth 乗算）でパレット index 0-15 に分散
+	unsigned int h = (unsigned int)trackNo * 2654435761u;
+	h ^= (unsigned int)chNo * 40503u;
+	unsigned int idx = (h >> 16) % 16u;
+	return m_NoteColor[idx];
 }
 
 //******************************************************************************
@@ -795,6 +802,7 @@ void MTNoteDesign::_Clear(void)
 	m_NoteColorType = Channel;
 	for (i = 0; i < 16; i++) {
 		m_NoteColor[i] = D3DXCOLOR(1.0f, 1.0f, 1.0f, 1.0f); //RGBA
+		m_FirstTrackForChannel[i] = -1;   //ced 20260628: CHANNELTRACK 用
 	}
 	for (i = 0; i < 12; i++) {
 		m_NoteColorOfScale[i] = D3DXCOLOR(1.0f, 1.0f, 1.0f, 1.0f); //RGBA
@@ -871,16 +879,30 @@ int MTNoteDesign::_LoadConfFile(
 		m_NoteColorType = ChannelTrack;
 	}
 
-	//ノート色情報を取得
-	for (i = 0; i < 16; i++) {
-		_stprintf_s(key, 32, _T("Ch-%02d-NoteRGBA"), i+1);
-		result = confFile.GetStr(key, hexColor, 16, _T("FFFFFFFF"));
+	//ノート色／グリッドライン色を取得（1.4.1 カラーパレット対応）
+	//  選択中のカラーパレットから取得する。パレット0＝デフォルトはシーンiniの
+	//  Ch-NN-NoteRGBA / GridLineRGBA を読むため、従来と同一色になる（退行なし）。
+	//  ※ Mod 機能（ActiveKeyColor / EmissiveRGBA / CaptionRGBA）は別系統で ini のまま。
+	{
+		MTColorConf colorConf;
+		MTColorPalette colorPalette;
+		D3DXCOLOR palColor;
+		result = colorConf.Initialize(pSceneName);
 		if (result != 0) goto EXIT;
+		colorConf.GetSelectedColorPalette(&colorPalette);
 
-		m_NoteColor[i] = DXColorUtil::MakeColorFromHexRGBA(hexColor);
+		//ノート色情報（パレットから）
+		for (i = 0; i < 16; i++) {
+			result = colorPalette.GetChColor(i, &palColor);
+			if (result != 0) goto EXIT;
+			m_NoteColor[i] = palColor;
+		}
+
+		//グリッドライン色情報（パレットから）
+		colorPalette.GetGridLineColor(&m_GridLineColor);
 	}
 
-	//音階用ノート色情報を取得
+	//音階用ノート色情報を取得（パレット非対応：iniから取得）
 	for (i = 0; i < 12; i++) {
 		_stprintf_s(key, 32, _T("Scale-%02d-NoteRGBA"), i+1);
 		result = confFile.GetStr(key, hexColor, 16, _T("FFFFFFFF"));
@@ -888,11 +910,6 @@ int MTNoteDesign::_LoadConfFile(
 
 		m_NoteColorOfScale[i] = DXColorUtil::MakeColorFromHexRGBA(hexColor);
 	}
-
-	//グリッドライン色情報を取得
-	result = confFile.GetStr(_T("GridLineRGBA"), hexColor, 16, _T("444444FF"));
-	if (result != 0) goto EXIT;
-	m_GridLineColor = DXColorUtil::MakeColorFromHexRGBA(hexColor);
 
 	//再生面色情報を取得
 	result = confFile.GetStr(_T("PlaybackSectionRGBA"), hexColor, 16, _T("AAAAFFFF"));

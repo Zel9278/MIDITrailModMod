@@ -30,6 +30,10 @@ MTKeyboard11::MTKeyboard11()
 	m_pBaseVerts = NULL;
 	m_VertexNum = 0;
 	m_NumKbd = 0;
+	m_InfiniteKbd = false;          //ced 20260629
+	m_HasOctaveBlock = false;
+	m_OctaveWidthX = 0.0f;
+	ZeroMemory(m_OctaveKeyPrim, sizeof(m_OctaveKeyPrim));
 	m_LastAnimMs = 0;
 	m_KeyDownDurMs = 40;   // DX9 default; overridden from the design in Create
 	m_KeyUpDurMs = 40;
@@ -79,6 +83,9 @@ void MTKeyboard11::Release()
 	m_NumKbd = 0;
 	if (m_pSRV != NULL) { m_pSRV->Release(); m_pSRV = NULL; }
 	if (m_pBaseVerts != NULL) { free(m_pBaseVerts); m_pBaseVerts = NULL; }
+	m_OctaveBlock.Release();        //ced 20260629
+	m_HasOctaveBlock = false;
+	m_InfiniteKbd = false;
 	m_VertexNum = 0;
 	m_CurTickTime = 0;
 	m_Ready = false;
@@ -420,6 +427,17 @@ int MTKeyboard11::Create(
 		memcpy(m_Subs[i].pWorkVerts, pCpuVB, (size_t)vn * sizeof(DXP11_VERTEX));
 	}
 
+	//ced 20260629: 無限鍵盤（NotLive box 2D/3D のみ）。静的な1オクターブ分のタイルブロックを
+	//作成しておき、描画時にオクターブ幅でカメラ可視範囲にタイルする。失敗時は無効化。
+	m_InfiniteKbd = (m_DesignMod.IsInfiniteKeyboard() && !m_LiveMode);
+	if (m_InfiniteKbd) {
+		if (_BuildOctaveBlock(pDevice, pContext, pCpuVB, pCpuIB) != 0) {
+			m_OctaveBlock.Release();
+			m_HasOctaveBlock = false;
+			m_InfiniteKbd = false;
+		}
+	}
+
 	//----------------------------------
 	// notes -> per-keyboard compact arrays (routed by port), color precomputed.
 	// Live monitor (pSeqData == NULL): no song -> skip; keys are driven directly
@@ -510,6 +528,126 @@ EXIT:;
 }
 
 //******************************************************************************
+// ced 20260629: build the static one-octave tile block (notes 0-11, unpressed) for
+// the infinite keyboard. Copies the octave's vertices from the CPU master and rebases
+// its indices to start at 0. m_OctaveKeyPrim[k] = triangle offset of key boundary k.
+//******************************************************************************
+int MTKeyboard11::_BuildOctaveBlock(ID3D11Device* pDevice, ID3D11DeviceContext* pContext,
+		const void* pCpuVB, const unsigned long* pCpuIB)
+{
+	int result = 0;
+	const DXP11_VERTEX* pVB = (const DXP11_VERTEX*)pCpuVB;
+	unsigned long vpos0 = 0, vnum0 = 0, vpos11 = 0, vnum11 = 0;
+	unsigned long ipos0 = 0, inum0 = 0, ipos11 = 0, inum11 = 0;
+	unsigned long vStart, vEnd, iStart, iEnd, blockVN, blockIN, n;
+	unsigned long* pIdx = NULL;
+	DXP11_VERTEX* pv = NULL;
+	unsigned long* pi = NULL;
+	int k;
+
+	// one octave width (12 semitones) in local (pre-scale) X
+	m_OctaveWidthX = m_DesignMod.GetKeyCenterPosX(12) - m_DesignMod.GetKeyCenterPosX(0);
+	if (m_OctaveWidthX <= 0.0f) return -1;
+
+	m_Geom.GetKeyVertexRange(0,  &vpos0,  &vnum0);
+	m_Geom.GetKeyVertexRange(11, &vpos11, &vnum11);
+	m_Geom.GetKeyIndexRange(0,   &ipos0,  &inum0);
+	m_Geom.GetKeyIndexRange(11,  &ipos11, &inum11);
+	vStart = vpos0;  vEnd = vpos11 + vnum11;
+	iStart = ipos0;  iEnd = ipos11 + inum11;
+	if ((vEnd <= vStart) || (iEnd <= iStart)) return -1;
+	blockVN = vEnd - vStart;
+	blockIN = iEnd - iStart;
+
+	// per-key triangle offsets within the block (for the partial top tile = keys 8..11)
+	for (k = 0; k <= 12; k++) {
+		unsigned long ip = iEnd;
+		if (k < 12) m_Geom.GetKeyIndexRange((unsigned char)k, &ip, NULL);
+		m_OctaveKeyPrim[k] = (ip - iStart) / 3;
+	}
+
+	pIdx = (unsigned long*)malloc((size_t)blockIN * sizeof(unsigned long));
+	if (pIdx == NULL) return YN_SET_ERR("Could not allocate memory.", 0, 0);
+	for (n = 0; n < blockIN; n++) pIdx[n] = pCpuIB[iStart + n] - vStart;   // rebase indices
+
+	if ((result = m_OctaveBlock.CreateVertexBuffer(pDevice, blockVN)) != 0) { free(pIdx); return result; }
+	if ((result = m_OctaveBlock.CreateIndexBuffer(pDevice, blockIN)) != 0) { free(pIdx); return result; }
+	if ((result = m_OctaveBlock.LockVertex(pContext, &pv)) != 0) { free(pIdx); return result; }
+	memcpy(pv, &pVB[vStart], (size_t)blockVN * sizeof(DXP11_VERTEX));
+	m_OctaveBlock.UnlockVertex(pContext);
+	if ((result = m_OctaveBlock.LockIndex(pContext, &pi)) != 0) { free(pIdx); return result; }
+	memcpy(pi, pIdx, (size_t)blockIN * sizeof(unsigned long));
+	m_OctaveBlock.UnlockIndex(pContext);
+	free(pIdx);
+
+	m_OctaveBlock.SetMaterialAmbient(0.55f, 0.55f, 0.55f);
+	m_HasOctaveBlock = true;
+	return 0;
+}
+
+//******************************************************************************
+// ced 20260629: tile the static octave block below note 0 and above note 127, within
+// the camera's visible local-X range (so off-screen octaves are not drawn).
+//******************************************************************************
+void MTKeyboard11::_DrawInfiniteExtension(ID3D11DeviceContext* pContext, const XMMATRIX& mainWorld,
+		const XMMATRIX& viewProj, const XMFLOAT4& lightDir, const XMFLOAT3& camPos)
+{
+	if (!m_HasOctaveBlock || (m_OctaveWidthX <= 0.0f)) return;
+
+	// camera in keyboard-local (pre-transform) space, to cull octaves by local X.
+	// Keys are laid out along local X (the pitch axis); the keyboard sits in the local
+	// X-Y plane. The viewing distance that determines how wide an X span is on screen is
+	// the camera's distance PERPENDICULAR to the pitch axis = sqrt(Y^2 + Z^2). (Using
+	// only local Z collapsed to ~0 for some scene orientations -> the extension stopped
+	// growing in that view.)
+	XMVECTOR det;
+	XMMATRIX inv = XMMatrixInverse(&det, mainWorld);
+	XMVECTOR cl = XMVector3TransformCoord(XMVectorSet(camPos.x, camPos.y, camPos.z, 1.0f), inv);
+	float camLocalX = XMVectorGetX(cl);
+	float camLocalY = XMVectorGetY(cl);
+	float camLocalZ = XMVectorGetZ(cl);
+
+	// visible half-width along X grows with viewing distance (rough FOV proxy), capped
+	// so the number of tiled octaves (= draw calls) stays bounded.
+	float dist = sqrtf(camLocalY * camLocalY + camLocalZ * camLocalZ);
+	float halfRange = dist * 1.3f + m_OctaveWidthX * 2.0f;
+	if (halfRange > 160.0f) halfRange = 160.0f;
+	float loX = camLocalX - halfRange;
+	float hiX = camLocalX + halfRange;
+
+	m_OctaveBlock.SetTexture(m_pSRV);
+
+	// below note 0: full octaves k = -1, -2, ... (seamless; note 0 is C / octave boundary)
+	for (int k = -1; k > -256; k--) {
+		float ox = (float)k * m_OctaveWidthX;
+		if (ox + m_OctaveWidthX < loX) break;     // fully left of the view
+		m_OctaveBlock.SetWorldMatrix(XMMatrixTranslation(ox, 0.0f, 0.0f) * mainWorld);
+		m_OctaveBlock.Draw(pContext, viewProj, lightDir, -1, 0);
+	}
+
+	// above note 127 (= octave 10, key G): fill keys 8..11 (notes 128..131) of octave 10
+	// as a partial tile so there is no gap, then full octaves k = 11, 12, ...
+	{
+		float ox = 10.0f * m_OctaveWidthX;
+		if ((ox + m_OctaveWidthX >= loX) && (ox <= hiX)) {
+			int startPrim = (int)m_OctaveKeyPrim[8];
+			int primCount = (int)m_OctaveKeyPrim[12] - startPrim;
+			if (primCount > 0) {
+				m_OctaveBlock.SetWorldMatrix(XMMatrixTranslation(ox, 0.0f, 0.0f) * mainWorld);
+				m_OctaveBlock.Draw(pContext, viewProj, lightDir, primCount, startPrim);
+			}
+		}
+	}
+	for (int k = 11; k < 256; k++) {
+		float ox = (float)k * m_OctaveWidthX;
+		if (ox > hiX) break;                       // fully right of the view
+		if (ox + m_OctaveWidthX < loX) continue;
+		m_OctaveBlock.SetWorldMatrix(XMMatrixTranslation(ox, 0.0f, 0.0f) * mainWorld);
+		m_OctaveBlock.Draw(pContext, viewProj, lightDir, -1, 0);
+	}
+}
+
+//******************************************************************************
 // Draw: each keyboard with its own base transform + key-press state
 //   world = Scale . Trans(basePos[idx]) . RotX(-90) . RotZ(90) . RotX(roll) . Trans(playbackPos)
 //******************************************************************************
@@ -517,7 +655,8 @@ int MTKeyboard11::DrawDX11(
 		ID3D11DeviceContext* pContext,
 		const XMMATRIX& viewProj,
 		const XMFLOAT4& lightDir,
-		float rollAngle
+		float rollAngle,
+		const XMFLOAT3& camPos
 	)
 {
 	if (!m_Ready) return 0;
@@ -577,6 +716,11 @@ int MTKeyboard11::DrawDX11(
 		pSub->prim.SetWorldMatrix(world);
 		pSub->prim.SetTexture(m_pSRV);
 		pSub->prim.Draw(pContext, viewProj, lightDir, -1, 0);
+
+		//ced 20260629: 無限鍵盤 — このキーボード行の左右にオクターブブロックをタイル描画
+		if (m_InfiniteKbd) {
+			_DrawInfiniteExtension(pContext, world, viewProj, lightDir, camPos);
+		}
 	}
 
 	return 0;
