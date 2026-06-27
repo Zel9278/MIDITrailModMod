@@ -13,6 +13,7 @@
 #include "DXColorUtil.h"
 #include "MTParam.h"
 #include "MTConfFile.h"
+#include "MTColorConf.h"
 #include "MTNoteDesign.h"
 #include <math.h>
 #include <algorithm>
@@ -871,16 +872,30 @@ int MTNoteDesign::_LoadConfFile(
 		m_NoteColorType = ChannelTrack;
 	}
 
-	//ノート色情報を取得
-	for (i = 0; i < 16; i++) {
-		_stprintf_s(key, 32, _T("Ch-%02d-NoteRGBA"), i+1);
-		result = confFile.GetStr(key, hexColor, 16, _T("FFFFFFFF"));
+	//ノート色／グリッドライン色を取得（1.4.1 カラーパレット対応）
+	//  選択中のカラーパレットから取得する。パレット0＝デフォルトはシーンiniの
+	//  Ch-NN-NoteRGBA / GridLineRGBA を読むため、従来と同一色になる（退行なし）。
+	//  ※ Mod 機能（ActiveKeyColor / EmissiveRGBA / CaptionRGBA）は別系統で ini のまま。
+	{
+		MTColorConf colorConf;
+		MTColorPalette colorPalette;
+		D3DXCOLOR palColor;
+		result = colorConf.Initialize(pSceneName);
 		if (result != 0) goto EXIT;
+		colorConf.GetSelectedColorPalette(&colorPalette);
 
-		m_NoteColor[i] = DXColorUtil::MakeColorFromHexRGBA(hexColor);
+		//ノート色情報（パレットから）
+		for (i = 0; i < 16; i++) {
+			result = colorPalette.GetChColor(i, &palColor);
+			if (result != 0) goto EXIT;
+			m_NoteColor[i] = palColor;
+		}
+
+		//グリッドライン色情報（パレットから）
+		colorPalette.GetGridLineColor(&m_GridLineColor);
 	}
 
-	//音階用ノート色情報を取得
+	//音階用ノート色情報を取得（パレット非対応：iniから取得）
 	for (i = 0; i < 12; i++) {
 		_stprintf_s(key, 32, _T("Scale-%02d-NoteRGBA"), i+1);
 		result = confFile.GetStr(key, hexColor, 16, _T("FFFFFFFF"));
@@ -888,11 +903,6 @@ int MTNoteDesign::_LoadConfFile(
 
 		m_NoteColorOfScale[i] = DXColorUtil::MakeColorFromHexRGBA(hexColor);
 	}
-
-	//グリッドライン色情報を取得
-	result = confFile.GetStr(_T("GridLineRGBA"), hexColor, 16, _T("444444FF"));
-	if (result != 0) goto EXIT;
-	m_GridLineColor = DXColorUtil::MakeColorFromHexRGBA(hexColor);
 
 	//再生面色情報を取得
 	result = confFile.GetStr(_T("PlaybackSectionRGBA"), hexColor, 16, _T("AAAAFFFF"));

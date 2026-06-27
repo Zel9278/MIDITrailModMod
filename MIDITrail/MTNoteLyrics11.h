@@ -20,6 +20,7 @@
 #include <DirectXMath.h>
 #include "DXPrimitive11.h"
 #include "MTNoteDesignMod.h"
+#include "MTNoteDesignRing.h"
 #include "MTNotePitchBend.h"
 #include "SMIDILib.h"
 
@@ -45,6 +46,10 @@ public:
 
 	// use the app's shared pitch bend so lyrics follow the bent note (call before Create)
 	void SetPitchBend(MTNotePitchBend* p) { m_pExtPitchBend = p; }
+
+	// ring scene: position lyrics on the ring (MTNoteDesignRing) instead of the
+	// planar layout. Call before Create. (timing/colour stay ini-shared via Mod)
+	void SetRingMode(bool r) { m_RingMode = r; }
 
 	int DrawDX11(ID3D11DeviceContext* pContext, const DirectX::XMMATRIX& viewProj,
 			const DirectX::XMFLOAT4& lightDir, float rollAngle, const DirectX::XMFLOAT3& camPos);
@@ -72,6 +77,8 @@ private:
 
 	ID3D11Device* m_pDevice;          // not owned (texture creation on activation)
 	MTNoteDesignMod m_NoteDesign;
+	MTNoteDesignRing m_NoteDesignRing; // ring-scene positioning (ring mode only)
+	bool m_RingMode;                   // true = lay lyrics on the ring
 	MTNotePitchBend m_PitchBend;      // fallback (no bend)
 	MTNotePitchBend* m_pExtPitchBend; // app's shared bend (not owned; NULL = use m_PitchBend)
 

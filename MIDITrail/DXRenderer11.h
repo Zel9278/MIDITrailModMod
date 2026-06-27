@@ -32,6 +32,7 @@ class MTNoteBoxLive11;
 class MTNoteRainLive11;
 class MTGridBox11;
 class MTDashboard11;
+class MTConfigManager11;
 class MTTimeIndicator11;
 class MTPictBoard11;
 class DXNoteRain11;
@@ -136,6 +137,7 @@ public:
 
 	//M4: the dashboard (on-screen info text) to draw (NULL = none)
 	void SetDashboard11(MTDashboard11* pDash) { m_pDashboard11 = pDash; }
+	void SetConfigManager11(MTConfigManager11* pCfg) { m_pConfigMgr11 = pCfg; }
 
 	//M4.4: the time indicator (playback section) to draw (NULL = none)
 	void SetTimeIndicator11(MTTimeIndicator11* pTI) { m_pTimeIndicator11 = pTI; }
@@ -258,6 +260,7 @@ private:
 
 	// M4: dashboard overlay (not owned; NULL = none)
 	MTDashboard11* m_pDashboard11;
+	MTConfigManager11* m_pConfigMgr11;
 
 	// M4.4: time indicator / playback section (not owned; NULL = none)
 	MTTimeIndicator11* m_pTimeIndicator11;

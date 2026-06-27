@@ -20,6 +20,7 @@
 #include "MTGridBox11.h"
 #include <d3dcompiler.h>
 #include "MTDashboard11.h"
+#include "MTConfigManager11.h"
 #include "MTTimeIndicator11.h"
 #include "MTPictBoard11.h"
 #include "DXNoteRain11.h"
@@ -66,6 +67,7 @@ DXRenderer11::DXRenderer11()
 	m_pNoteRainLive11 = NULL;
 	m_pGridBox11 = NULL;
 	m_pDashboard11 = NULL;
+	m_pConfigMgr11 = NULL;
 	m_pTimeIndicator11 = NULL;
 	m_pPictBoard11 = NULL;
 	m_pNoteRain11 = NULL;
@@ -552,8 +554,14 @@ int DXRenderer11::RenderScene(
 		m_pDashboard11->DrawDX11(m_pContext, m_Width, m_Height);
 	}
 
-	// ImGui draws no overlay during normal frames; it stays initialized only for
-	// the loading screen. File open is via the Win32 menu / drag-drop.
+	// Mod Mod: Config Manager (ImGui) - GUI editor for conf/*.ini, toggled from
+	// Options -> Config Manager. Drawn as an interactive ImGui window over the scene.
+	if (m_pConfigMgr11 != NULL) {
+		m_pConfigMgr11->RenderImGui();
+	}
+
+	// ImGui draws no other overlay during normal frames; it stays initialized for
+	// the loading screen too. File open is via the Win32 menu / drag-drop.
 
 	ImGui::EndFrame();
 	ImGui::Render();
