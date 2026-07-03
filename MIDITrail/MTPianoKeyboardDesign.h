@@ -194,6 +194,9 @@ public:
 	unsigned char GetKeyDispRangeEnd();
 	bool IsKeyDisp(unsigned char noteNo);
 
+	//ced 20260629: 無限鍵盤（0-127 の外にもオクターブパターンを延長）
+	bool IsInfiniteKeyboard() { return m_InfiniteKeyboard; }
+
 private:
 
 	//キー情報
@@ -277,6 +280,7 @@ private:
 	//キー表示範囲
 	int m_KeyDispRangeStart;
 	int m_KeyDispRangeEnd;
+	bool m_InfiniteKeyboard;   //ced 20260629: 無限鍵盤
 
 // >>> modify access level to protected 20161224 yossiepon begin
 protected:
