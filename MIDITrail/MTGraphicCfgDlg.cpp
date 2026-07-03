@@ -38,6 +38,8 @@ MTGraphicCfgDlg::MTGraphicCfgDlg(void)
 	m_hWnd = NULL;
 	m_MultiSampleType = 0;
 	m_hComboMultiSampleType = NULL;
+	m_SuperSample = 1;                  //ced 20260628
+	m_hComboSuperSample = NULL;         //ced 20260628
 	m_hEditImageFilePath = NULL;
 	m_hEditQuarterNoteLengthMag = NULL;
 	m_ImageFilePath[0] = _T('\0');
@@ -186,6 +188,11 @@ int MTGraphicCfgDlg::_OnInitDlg(
 	result = _InitComboMultiSampleType(m_hComboMultiSampleType, m_MultiSampleType);
 	if (result != 0) goto EXIT;
 
+	//ced 20260628: スーパーサンプリング(SSAA)コンボ初期化
+	m_hComboSuperSample = GetDlgItem(hDlg, IDC_COMBO_SUPERSAMPLE);
+	result = _InitComboSuperSample(m_hComboSuperSample, m_SuperSample);
+	if (result != 0) goto EXIT;
+
 	//背景画像ファイルパス初期化
 	m_hEditImageFilePath = GetDlgItem(hDlg, IDC_EDIT_IMAGE_FILE_PATH);
 	result = _InitBackgroundImageFilePath();
@@ -228,6 +235,7 @@ int MTGraphicCfgDlg::_LoadConf()
 {
 	int result = 0;
 	int multiSampleType = 0;
+	int superSample = 0;   //ced 20260628
 
 	//アンチエイリアス設定値取得
 	result = m_ConfFile.SetCurSection(_T("Anti-aliasing"));
@@ -247,6 +255,16 @@ int MTGraphicCfgDlg::_LoadConf()
 	}
 	else {
 		m_MultiSampleType = 0;
+	}
+
+	//ced 20260628: スーパーサンプリング(SSAA)倍率（同じ Anti-aliasing セクション）
+	result = m_ConfFile.GetInt(_T("SuperSample"), &superSample, MT_GRAPHIC_SUPER_SAMPLE_DEF);
+	if (result != 0) goto EXIT;
+	if ((DX_SUPER_SAMPLE_MIN <= superSample) && (superSample <= DX_SUPER_SAMPLE_MAX)) {
+		m_SuperSample = superSample;
+	}
+	else {
+		m_SuperSample = 1;   //OFF
 	}
 
 	//背景画像ファイルパス設定値取得
@@ -349,6 +367,48 @@ EXIT:;
 }
 
 //******************************************************************************
+// ced 20260628: スーパーサンプリング(SSAA)コンボ初期化（OFF / 2x / 3x / 4x）
+//******************************************************************************
+int MTGraphicCfgDlg::_InitComboSuperSample(
+		HWND hCombo,
+		unsigned long selSuperSample
+	)
+{
+	int result = 0;
+	LRESULT lresult = 0;
+	int comboIndex = 0;
+	int selectedIndex = 0;
+	unsigned long ss = 0;
+	TCHAR itemStr[256];
+
+	if (hCombo == NULL) return 0;
+
+	//先頭：OFF（=1倍）
+	SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)_T("OFF"));
+	SendMessage(hCombo, CB_SETITEMDATA, comboIndex, (LPARAM)1);
+	if (selSuperSample <= 1) selectedIndex = comboIndex;
+	comboIndex++;
+
+	//2x / 3x / 4x
+	for (ss = DX_SUPER_SAMPLE_MIN; ss <= DX_SUPER_SAMPLE_MAX; ss++) {
+		_stprintf_s(itemStr, 256, _T("%dx"), ss);
+		lresult = SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)itemStr);
+		if ((lresult == CB_ERR) || (lresult == CB_ERRSPACE)) {
+			result = YN_SET_ERR("Windows API error.", GetLastError(), 0);
+			goto EXIT;
+		}
+		SendMessage(hCombo, CB_SETITEMDATA, comboIndex, (LPARAM)ss);
+		if (ss == selSuperSample) selectedIndex = comboIndex;
+		comboIndex++;
+	}
+
+	SendMessage(hCombo, CB_SETCURSEL, selectedIndex, 0);
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
 // 背景画像ファイルパス初期化
 //******************************************************************************
 int MTGraphicCfgDlg::_InitBackgroundImageFilePath()
@@ -438,6 +498,25 @@ int MTGraphicCfgDlg::_Save()
 		m_isChanged = true;
 	}
 	m_MultiSampleType = selectedMultiSampleType;
+
+	//------------------------------
+	//ced 20260628: スーパーサンプリング(SSAA)
+	//------------------------------
+	{
+		unsigned long selSS = 1;
+		lresult = SendMessage(m_hComboSuperSample, CB_GETCURSEL, 0, 0);
+		if ((lresult != CB_ERR) && (lresult >= 0)) {
+			LRESULT data = SendMessage(m_hComboSuperSample, CB_GETITEMDATA, (WPARAM)lresult, 0);
+			if (data != CB_ERR) selSS = (unsigned long)data;
+		}
+		if (selSS < 1) selSS = 1;
+		result = m_ConfFile.SetCurSection(_T("Anti-aliasing"));
+		if (result != 0) goto EXIT;
+		result = m_ConfFile.SetInt(_T("SuperSample"), selSS);
+		if (result != 0) goto EXIT;
+		if (m_SuperSample != selSS) m_isChanged = true;
+		m_SuperSample = selSS;
+	}
 
 	//------------------------------
 	//背景画像ファイルパス

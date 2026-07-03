@@ -40,9 +40,12 @@
 #include "MTMIDIOUTCfgDlg.h"
 #include "MTMIDIINCfgDlg.h"
 #include "MTGraphicCfgDlg.h"
+#include "MTColorCfgDlg.h"
+#include "MTConfigManager11.h"
 #include "MTHowToViewDlg.h"
 #include "MTAboutDlg.h"
 #include "MTCmdLineParser.h"
+#include "MTFileList.h"
 #include "MTGamePadCtrl.h"
 
 using namespace YNBaseLib;
@@ -180,6 +183,16 @@ private:
 	MTFirstPersonCam m_FpCam11;  // M2.5: real first-person camera for DX11 path
 	bool m_IsMouseCamMode11;  // M3: DX11 mouse-look toggle
 	bool m_IsAutoRollMode11;  // M3: DX11 auto-roll toggle
+	// ced 20260629: Config Manager(ImGui) を開いている間カメラ入力を止める際の状態退避。
+	// 閉じたらマウスカメラを元に戻す（開いて閉じると見回せなくなる問題の対策）。
+	bool m_CfgWasVisible;       // 前フレームの Config Manager 表示状態
+	bool m_MouseCamBeforeCfg;   // Config を開く直前のマウスカメラ ON/OFF
+	// ced 20260628: keep the live viewpoint across a re-setup of the SAME scene
+	// (song switch in same view mode / renderer re-init on resize/AA) so the camera
+	// doesn't snap back to default/last-saved every time _SetupDX11Scene runs.
+	bool m_HasPrevView;
+	SceneType m_PrevViewSceneType;
+	bool m_PrevViewIsLive;
 	DXNoteBox11 m_NoteBox11;  // M3: DX11 instanced note field
 	DXNoteRain11 m_NoteRain11;  // M4.7: DX11 instanced falling-note field (Rain scene)
 	MTKeyboardRain11 m_KbdRain11;  // M4.7b: DX11 Rain-scene keyboard
@@ -224,6 +237,7 @@ private:
 	bool m_isLoading;
 	MTScene* m_pScene;
 	unsigned long m_MultiSampleType;
+	unsigned long m_SuperSample;   //ced 20260628: SSAA 倍率（1=OFF）
 
 	//FPS表示系
 	DWORD m_PrevTime;
@@ -275,6 +289,12 @@ private:
 	//グラフィック設定ダイアログ
 	MTGraphicCfgDlg m_GraphicCfgDlg;
 
+	//カラー設定ダイアログ（1.4.1 移植）
+	MTColorCfgDlg m_ColorCfgDlg;
+
+	//設定マネージャ（conf/*.ini を GUI 編集：Mod Mod 独自）
+	MTConfigManager11 m_ConfigMgr11;
+
 	//操作方法ダイアログ
 	MTHowToViewDlg m_HowToViewDlg;
 
@@ -301,8 +321,22 @@ private:
 	//自動視点保存
 	bool m_isAutoSaveViewpoint;
 
+	//ced 20260628: View 表示トグル群を再起動後も保持する（Auto save view settings）
+	bool m_isAutoSaveViewSettings;
+
 	//次回オープン対象ファイルパス
 	TCHAR m_NextFilePath[_MAX_PATH];
+
+	// >>> add ced 20260627: 1.4.1 folder playback / file navigation
+	//フォルダ演奏（フォルダ内 MIDI を連続再生）
+	bool m_isFolderPlayback;
+	//メニューバー表示
+	bool m_isEnableMenuBar;
+	//フォルダ演奏時の曲間ディレイ(msec)
+	int m_DelayBetweenSongsInMsec;
+	//フォルダ内 MIDI ファイルリスト
+	MTFileList m_MIDIFileList;
+	// <<< add ced 20260627
 
 	//ゲームパッド制御
 	MTGamePadCtrl m_GamePadCtrl;
@@ -331,6 +365,22 @@ private:
 // >>> add 20120728 yossiepon begin
 	int _OnMenuFileAdd();
 // <<< add 20120728 yossiepon end
+// >>> add ced 20260627: 1.4.1 features
+	int _OnMenuOpenFolder();
+	int _OnMenuPreviousFile();
+	int _OnMenuNextFile();
+	int _OnMenuFolderPlayback();
+	int _OnMenuMenuBar();
+	int _OnMenuMyViewpoint(unsigned long viewpointNo);
+	int _OnMenuSaveMyViewpoint(unsigned long viewpointNo);
+	int _SelectFolder(WCHAR* pFolderPath, unsigned long bufSize, bool* pIsSelected);
+	int _MakeFileListWithFolder(const WCHAR* pFolderPath, MTFileList* pFileList);
+	int _StopPlaybackAndOpenFolder(const WCHAR* pFolderPath);
+	int _OpenFileW(const WCHAR* pFilePathW);
+	int _ToggleMenuBar();
+	int _MoveToMyViewpoint(unsigned long viewpointNo);
+	int _SaveMyViewpoint(unsigned long viewpointNo);
+// <<< add ced 20260627
 	int _OnMenuPlay();
 	int _OnMenuStop();
 	int _OnMenuRepeat();
@@ -341,6 +391,7 @@ private:
 	int _OnMenuStartMonitoring();
 	int _OnMenuStopMonitoring();
 	int _OnMenuAutoSaveViewpoint();
+	int _OnMenuAutoSaveViewSettings();  //ced 20260628
 	int _OnMenuResetViewpoint();
 	int _OnMenuViewpoint(unsigned long viewpointNo);
 	int _OnMenuSaveViewpoint();
@@ -350,6 +401,8 @@ private:
 	int _OnMenuOptionMIDIOUT();
 	int _OnMenuOptionMIDIIN();
 	int _OnMenuOptionGraphic();
+	int _OnMenuOptionColor();
+	int _OnMenuConfigManager();
 	int _OnMenuManual();
 	int _OnMenuSelectSceneType(SceneType type);
 	int _OnMenuToggleSingleKeyboard();
@@ -384,6 +437,10 @@ private:
 	int _SaveSceneConf();
 	int _LoadViewpoint();
 	int _SaveViewpoint();
+	//ced 20260703: reset the live DX11 camera to the saved viewpoint (conf "Viewpoint-<scene>"),
+	//falling back to the scene default when none is saved. Used by the manual-stop viewpoint
+	//reset so it returns to the user's saved viewpoint instead of the hard-coded default.
+	void _ResetViewpointToSaved();
 	int _LoadGraphicConf();
 	int _LoadPlayerConf();
 	int _OnDestroy();

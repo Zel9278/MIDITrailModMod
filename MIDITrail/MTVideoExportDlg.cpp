@@ -23,6 +23,8 @@ static const TCHAR* g_CodecNames[] = {
 	_T("Transparent .mov  (QuickTime RLE)"),
 	_T("Transparent .mov  (ProRes 4444)"),
 	_T("Transparent .mkv  (FFV1, lossless)"),
+	_T("H.264  (AMF, AMD GPU)"),
+	_T("H.265 / HEVC  (AMF, AMD GPU)"),
 };
 static const int g_CodecCount = (int)(sizeof(g_CodecNames) / sizeof(g_CodecNames[0]));
 
