@@ -97,6 +97,8 @@ public:
 
 	//M3 DX11: per-key vertex range (in the buffer GetGeometrySize/BuildGeometryCPU produced)
 	void GetKeyVertexRange(unsigned char noteNo, unsigned long* pVertexPos, unsigned long* pVertexNum);
+	//ced 20260629: per-key index range (for the infinite-keyboard octave tile block)
+	void GetKeyIndexRange(unsigned char noteNo, unsigned long* pIndexPos, unsigned long* pIndexNum);
 	//M3 DX11: build one key's vertices (optionally pressed by keyDownRate and tinted)
 	//into pDst (GetKeyVertexRange's vertexNum vertices), device-free.
 	int BuildKeyCPU(unsigned char noteNo, float keyDownRate, D3DXCOLOR* pColor, void* pDst);

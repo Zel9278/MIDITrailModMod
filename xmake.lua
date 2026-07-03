@@ -120,7 +120,16 @@ target("MIDITrail")
     add_files("MIDITrail/MIDITrailMain.cpp")
     add_files("MIDITrail/MTAboutDlg.cpp")
     add_files("MIDITrail/MTCmdLineParser.cpp")
+    add_files("MIDITrail/MTColorCfgDlg.cpp")
+    add_files("MIDITrail/MTColorConf.cpp")
+    add_files("MIDITrail/MTColorPalette.cpp")
+    add_files("MIDITrail/MTColorPaletteCfgDlg.cpp")
+    add_files("MIDITrail/MTColorPickerDlg.cpp")
+    add_files("MIDITrail/MTColorParamExportDlg.cpp")
+    add_files("MIDITrail/MTColorParamImportDlg.cpp")
     add_files("MIDITrail/MTConfFile.cpp")
+    add_files("MIDITrail/MTConfigManager11.cpp")
+    add_files("MIDITrail/MTFileList.cpp")
     add_files("MIDITrail/MTFirstPersonCam.cpp")
     add_files("MIDITrail/MTFont2Bmp.cpp")
     add_files("MIDITrail/MTGamePadCtrl.cpp")
@@ -142,3 +151,20 @@ target("MIDITrail")
     add_files("MIDITrail/MTWindowSizeCfgDlg.cpp")
     add_files("MIDITrail/stdafx.cpp")
     add_files("MIDITrail/MIDITrail.rc")
+
+    -- ced 20260629: deploy resource folders next to the exe AFTER build, but only when
+    -- they do not already exist. This keeps a fresh build dir runnable while NEVER
+    -- overwriting an existing (user-customized) conf/data folder.
+    after_build(function (target)
+        local outdir = target:targetdir()
+        for _, name in ipairs({"conf", "data", "doc"}) do
+            local src = path.join(os.projectdir(), "Resources", name)
+            local dst = path.join(outdir, name)
+            if os.isdir(dst) then
+                print("[deploy] skip Resources/%s (already exists at %s)", name, dst)
+            elseif os.isdir(src) then
+                os.cp(src, outdir)
+                print("[deploy] copied Resources/%s -> %s", name, dst)
+            end
+        end
+    end)

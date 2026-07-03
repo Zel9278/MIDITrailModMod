@@ -134,6 +134,7 @@ void MTPianoKeyboardDesign::_Initialize()
 	m_ActiveKeyColorTailRate = 0.5f;  //設定ファイル
 	m_KeyDispRangeStart = 0;
 	m_KeyDispRangeEnd   = 127;
+	m_InfiniteKeyboard  = false;   //ced 20260629
 
 	return;
 }
@@ -202,6 +203,12 @@ void MTPianoKeyboardDesign::_InitKeyType()
 		default: break;
 	}
 	m_KeyInfo[m_KeyDispRangeEnd].keyType = type;
+
+	//ced 20260701: 無限鍵盤では note127 を閉じた端キャップではなく本来の G 形状にする
+	//（右に G#(128) 用の切り欠きを持つ）。
+	if (m_InfiniteKeyboard) {
+		m_KeyInfo[SM_MAX_NOTE_NUM - 1].keyType = KeyWhiteG;
+	}
 
 	return;
 }
@@ -455,6 +462,11 @@ float MTPianoKeyboardDesign::GetKeyCenterPosX(
 
 	if (noteNo < SM_MAX_NOTE_NUM) {
 		centerPosX = m_KeyInfo[noteNo].keyCenterPosX;
+	}
+	else if (m_InfiniteKeyboard && (noteNo == SM_MAX_NOTE_NUM)) {
+		//ced 20260701: 無限鍵盤では note128(G#9) の位置を外挿（G9 + 半ステップ）。
+		//note127 を G 形状で描く際の右切り欠き位置に使う。
+		centerPosX = m_KeyInfo[SM_MAX_NOTE_NUM - 1].keyCenterPosX + (m_WhiteKeyStep / 2.0f);
 	}
 
 	return centerPosX;
@@ -956,6 +968,12 @@ bool MTPianoKeyboardDesign::IsKeyDisp(
 {
 	bool isDisp = false;
 
+	//ced 20260629: 無限鍵盤がONなら表示範囲(KeyDispRange)は無視して全鍵を表示する。
+	//クリップした範囲とオクターブ拡張タイルの間に隙間が出る違和感を防ぐ。
+	if (m_InfiniteKeyboard) {
+		return true;
+	}
+
 	if ((m_KeyDispRangeStart <= noteNo) && (noteNo <= m_KeyDispRangeEnd)) {
 		isDisp = true;
 	}
@@ -1023,6 +1041,13 @@ int MTPianoKeyboardDesign::_LoadConfFile(
 	result = confFile.GetInt(_T("KeyDispRangeEnd"), &m_KeyDispRangeEnd, 127);
 	if (result != 0) goto EXIT;
 
+	//ced 20260629: 無限鍵盤（0-127 の外にもオクターブパターンを延長）。既定 0=OFF。
+	{
+		int infinite = 0;
+		confFile.GetInt(_T("InfiniteKeyboard"), &infinite, 0);
+		m_InfiniteKeyboard = (infinite != 0);
+	}
+
 	//キーボード最大表示数は1ポート分（16ch）に制限する
 	if (m_KeyboardMaxDispNum > SM_MAX_CH_NUM) {
 		m_KeyboardMaxDispNum = SM_MAX_CH_NUM;
@@ -1046,6 +1071,13 @@ int MTPianoKeyboardDesign::_LoadConfFile(
 	}
 	if (m_KeyDispRangeStart > m_KeyDispRangeEnd) {
 		m_KeyDispRangeEnd = m_KeyDispRangeStart;
+	}
+
+	//ced 20260629: 無限鍵盤がONなら表示範囲を全鍵(0-127)に強制する。クリップ範囲のままだと
+	//鍵盤端キャップ(_InitKeyType)が中途半端な位置に出て拡張タイルと不整合になるため。
+	if (m_InfiniteKeyboard) {
+		m_KeyDispRangeStart = 0;
+		m_KeyDispRangeEnd   = 127;
 	}
 
 EXIT:;

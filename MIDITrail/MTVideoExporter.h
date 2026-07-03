@@ -39,6 +39,9 @@ enum MTVideoCodec {
 	MTVC_QTRLE_ALPHA,      // transparent    -> .mov (QuickTime RLE)
 	MTVC_PRORES4444_ALPHA, // transparent    -> .mov (ProRes 4444)
 	MTVC_FFV1_ALPHA,       // transparent    -> .mkv (lossless)
+	// ced 20260629: AMD GPU hardware encoder（末尾に追加。enum 値=コンボ index を維持）
+	MTVC_H264_AMF,         // GPU (AMD)      -> .mp4
+	MTVC_HEVC_AMF,         // GPU (AMD)      -> .mp4
 };
 
 struct MTVideoExportParams {
