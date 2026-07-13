@@ -26,6 +26,11 @@ using namespace YNBaseLib;
 //アンチエイリアシング：マルチサンプル種別デフォルト
 #define MT_GRAPHIC_MULTI_SAMPLE_TYPE_DEF  (0)  //OFF
 
+//ced 20260628: スーパーサンプリング(SSAA)倍率（1=OFF, 2..4）
+#define DX_SUPER_SAMPLE_MIN          (2)
+#define DX_SUPER_SAMPLE_MAX          (4)
+#define MT_GRAPHIC_SUPER_SAMPLE_DEF  (1)  //OFF(=1倍)
+
 
 //******************************************************************************
 // グラフィック設定ダイアログクラス
@@ -65,6 +70,9 @@ private:
 	HWND m_hComboMultiSampleType;
 	bool m_MultSampleTypeSupport[DX_MULTI_SAMPLE_TYPE_MAX+1];
 
+	//ced 20260628: スーパーサンプリング(SSAA)コンボ
+	HWND m_hComboSuperSample;
+
 	//背景画像ファイルパスエディットボックスのウィンドウハンドル
 	HWND m_hEditImageFilePath;
 	
@@ -73,6 +81,9 @@ private:
 
 	//アンチエイリアシング設定
 	unsigned long m_MultiSampleType;
+
+	//ced 20260628: スーパーサンプリング倍率（1=OFF）
+	unsigned long m_SuperSample;
 
 	//背景画像ファイルパス
 	TCHAR m_ImageFilePath[_MAX_PATH];
@@ -98,6 +109,9 @@ private:
 
 	//デバイス選択コンボボックス初期化
 	int _InitComboMultiSampleType(HWND hCombo, unsigned long selMultiSampleType);
+
+	//ced 20260628: スーパーサンプリングコンボ初期化
+	int _InitComboSuperSample(HWND hCombo, unsigned long selSuperSample);
 
 	//背景画像ファイルパス初期化
 	int _InitBackgroundImageFilePath();

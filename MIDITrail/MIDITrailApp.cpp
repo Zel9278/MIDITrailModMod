@@ -11,6 +11,8 @@
 #include "StdAfx.h"
 #include "imagehlp.h"
 #include "shellapi.h"
+#include "ShObjIdl.h"   // IFileOpenDialog (folder select) - 1.4.1 feature port
+#include "imgui.h"      // ImGui IO (config manager input capture guard)
 #include "YNBaseLib.h"
 #include "MTParam.h"
 #include "MTConfFile.h"
@@ -64,6 +66,7 @@ MIDITrailApp::MIDITrailApp(void)
 	m_pScene = NULL;
 	m_LoadFilePathW[0] = L'\0';
 	m_MultiSampleType = 0;
+	m_SuperSample = 1;   //ced 20260628
 
 	//FPS表示系
 	m_PrevTime = 0;
@@ -98,6 +101,11 @@ MIDITrailApp::MIDITrailApp(void)
 	//M3 (DX11) camera toggles
 	m_IsMouseCamMode11 = false;
 	m_IsAutoRollMode11 = false;
+	m_CfgWasVisible = false;        //ced 20260629
+	m_MouseCamBeforeCfg = false;    //ced 20260629
+	m_HasPrevView = false;
+	m_PrevViewSceneType = PianoRoll3D;
+	m_PrevViewIsLive = false;
 
 	//M4 (DX11) dashboard NPS
 	m_NpsNoteCount = 0;
@@ -109,6 +117,12 @@ MIDITrailApp::MIDITrailApp(void)
 
 	//自動視点保存
 	m_isAutoSaveViewpoint = false;
+	m_isAutoSaveViewSettings = false;  //ced 20260628
+
+	//フォルダ演奏 / メニューバー（1.4.1 移植）
+	m_isFolderPlayback = false;
+	m_isEnableMenuBar = true;
+	m_DelayBetweenSongsInMsec = 0;
 
 	//プレーヤー制御
 	m_AllowMultipleInstances = 0;
@@ -228,7 +242,7 @@ int MIDITrailApp::Initialize(
 	if (result != 0) goto EXIT;
 
 	//レンダラ初期化
-	result = m_Renderer11.Initialize(m_hWnd, m_MultiSampleType);
+	result = m_Renderer11.Initialize(m_hWnd, m_MultiSampleType, false, m_SuperSample);
 	if (result != 0) goto EXIT;
 
 	//M4: DX11 dashboard (created now, but only shown once a song is loaded -
@@ -236,6 +250,10 @@ int MIDITrailApp::Initialize(
 	if (m_Renderer11.GetDevice() != NULL) {
 		m_Dashboard11.Create(m_Renderer11.GetDevice(), m_Renderer11.GetContext());
 	}
+
+	//設定マネージャ（conf/*.ini を GUI 編集：Mod Mod 独自）を初期化しレンダラへ登録
+	m_ConfigMgr11.Initialize();
+	m_Renderer11.SetConfigManager11(&m_ConfigMgr11);
 
 	//シーンオブジェクト生成
 	m_SceneType = Title;
@@ -387,6 +405,29 @@ int MIDITrailApp::Run()
 				(wndpl.showCmd != SW_MINIMIZE) &&
 				(wndpl.showCmd != SW_SHOWMINIMIZED) &&
 				(wndpl.showCmd != SW_SHOWMINNOACTIVE)) {
+				//Config Manager(ImGui) 表示中は DirectInput によるカメラ操作を止める
+				//（マウス/キー/パッドが裏で効くのを防ぐ。自動スクロール/ロールは継続）。
+				//マウスカメラモードが ON なら解除してカーソルを ImGui 操作可能に戻す。
+				{
+					bool cfgVisible = m_ConfigMgr11.IsVisible();
+					m_FpCam11.SetInputEnabled(!cfgVisible);
+					//ced 20260629: 開いた瞬間はマウスカメラを退避して解除（カーソルを使えるように）、
+					//閉じた瞬間に元の状態へ復元する。これで「開いて閉じると見回せない」を防ぐ。
+					if (cfgVisible && !m_CfgWasVisible) {
+						m_MouseCamBeforeCfg = m_IsMouseCamMode11;
+						if (m_IsMouseCamMode11) {
+							m_IsMouseCamMode11 = false;
+							m_FpCam11.SetMouseCamMode(false);
+						}
+					}
+					else if (!cfgVisible && m_CfgWasVisible) {
+						if (m_MouseCamBeforeCfg && (m_PlayStatus != NoData)) {
+							m_IsMouseCamMode11 = true;
+							m_FpCam11.SetMouseCamMode(true);
+						}
+					}
+					m_CfgWasVisible = cfgVisible;
+				}
 				//描画
 				result = m_Renderer11.RenderScene(m_pScene);
 				if (result != 0) {
@@ -405,6 +446,15 @@ int MIDITrailApp::Run()
 					}
 				}
 				_UpdateFPS();
+
+				//Config Manager で .ini を保存したら現シーンを再構築して反映する
+				if (m_ConfigMgr11.ConsumeApplyRequest()) {
+					result = _ChangeWindowSize();
+					if (result != 0) {
+						YN_SHOW_ERR(m_hWnd);
+						PostMessage(m_hWnd, WM_DESTROY, 0, 0);
+					}
+				}
 			}
 		}
     }
@@ -568,10 +618,15 @@ int MIDITrailApp::_SetWindowSize()
 		goto EXIT;
 	}
 	
-	//メニューバー表示
-	result = _ShowMenu();
+	//メニューバー表示（ユーザがメニューバーを無効化していれば隠す：1.4.1 移植）
+	if (m_isEnableMenuBar) {
+		result = _ShowMenu();
+	}
+	else {
+		result = _HideMenu();
+	}
 	if (result != 0) goto EXIT;
-	
+
 	//ウィンドウサイズ変更
 	bresult = SetWindowPos(
 					m_hWnd,			//ウィンドウハンドル
@@ -733,6 +788,25 @@ LRESULT MIDITrailApp::_WndProcImpl(
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
 		return false;
 
+	//Config Manager (ImGui) を操作中だけ、その入力をアプリ側（カメラ操作・ショート
+	//カット）に渡さない。非表示時は一切ガードしない（マウス視点移動などを阻害しない）。
+	if (m_ConfigMgr11.IsVisible()) {
+		ImGuiIO& io = ImGui::GetIO();
+		switch (message) {
+			case WM_LBUTTONDOWN: case WM_LBUTTONUP:
+			case WM_RBUTTONDOWN: case WM_RBUTTONUP:
+			case WM_MBUTTONDOWN: case WM_MBUTTONUP:
+			case WM_MOUSEMOVE:   case WM_MOUSEWHEEL:
+				if (io.WantCaptureMouse) return DefWindowProc(hWnd, message, wParam, lParam);
+				break;
+			case WM_KEYDOWN: case WM_KEYUP: case WM_CHAR: case WM_SYSKEYDOWN:
+				if (io.WantCaptureKeyboard) return DefWindowProc(hWnd, message, wParam, lParam);
+				break;
+			default:
+				break;
+		}
+	}
+
 	//Ignore user input and scene-affecting messages while a file is loading
 	if (m_isLoading) {
 		switch (message) {
@@ -773,6 +847,52 @@ LRESULT MIDITrailApp::_WndProcImpl(
 					if (result != 0) goto EXIT;
 					break;
 // <<< add 20120728 yossiepon end
+// >>> add ced 20260627: 1.4.1 features
+				case IDM_OPEN_FOLDER:
+					result = _OnMenuOpenFolder();
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_PREVIOUS_FILE:
+					result = _OnMenuPreviousFile();
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_NEXT_FILE:
+					result = _OnMenuNextFile();
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_FOLDER_PLAYBACK:
+					result = _OnMenuFolderPlayback();
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_MENUBAR:
+					result = _OnMenuMenuBar();
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_MYVIEWPOINT1:
+					result = _OnMenuMyViewpoint(1);
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_MYVIEWPOINT2:
+					result = _OnMenuMyViewpoint(2);
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_MYVIEWPOINT3:
+					result = _OnMenuMyViewpoint(3);
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_SAVE_MYVIEWPOINT1:
+					result = _OnMenuSaveMyViewpoint(1);
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_SAVE_MYVIEWPOINT2:
+					result = _OnMenuSaveMyViewpoint(2);
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_SAVE_MYVIEWPOINT3:
+					result = _OnMenuSaveMyViewpoint(3);
+					if (result != 0) goto EXIT;
+					break;
+// <<< add ced 20260627
 				case IDM_EXPORT_VIDEO:
 					//M6: �����o��
 					result = _OnMenuExportVideo();
@@ -910,6 +1030,12 @@ LRESULT MIDITrailApp::_WndProcImpl(
 					result = _OnMenuAutoSaveViewpoint();
 					if (result != 0) goto EXIT;
 					break;
+// >>> add ced 20260628: View 表示設定の自動保存の有効／無効を切り替え
+				case IDM_AUTO_SAVE_VIEWSETTINGS:
+					result = _OnMenuAutoSaveViewSettings();
+					if (result != 0) goto EXIT;
+					break;
+// <<< add ced 20260628
 				//視点保存（手動）は廃止
 				//case IDM_SAVE_VIEWPOINT:
 				//	//視点保存
@@ -956,6 +1082,19 @@ LRESULT MIDITrailApp::_WndProcImpl(
 					result = _OnMenuOptionGraphic();
 					if (result != 0) goto EXIT;
 					break;
+// >>> add ced 20260627: 1.4.1 colour palette config
+				case IDM_OPTION_COLOR:
+					//カラー設定
+					result = _OnMenuOptionColor();
+					if (result != 0) goto EXIT;
+					break;
+// <<< add ced 20260627
+// >>> add ced 20260627: config manager (conf/*.ini GUI editor)
+				case IDM_OPTION_CONFIGMANAGER:
+					result = _OnMenuConfigManager();
+					if (result != 0) goto EXIT;
+					break;
+// <<< add ced 20260627
 				case IDM_HOWTOVIEW:
 					//操作方法ダイアログ表示
 					m_HowToViewDlg.Show(m_hWnd);
@@ -1113,6 +1252,369 @@ EXIT:;
 }
 
 // <<< add 20120728 yossiepon end
+
+// >>> add ced 20260627: upstream 1.4.1 features ported to the DX11 / MBCS app
+//******************************************************************************
+// wide path -> DX11 char load pipeline bridge
+//   The DX11 app is MBCS (char). Folder/file navigation yields Unicode (WCHAR)
+//   paths; route them via m_LoadFilePathW so _LoadMIDIFile uses LoadW (Unicode
+//   preserved), with a CP_ACP char copy for the existing char-based open chain.
+//******************************************************************************
+int MIDITrailApp::_OpenFileW(const WCHAR* pFilePathW)
+{
+	int result = 0;
+	TCHAR filePath[_MAX_PATH] = {_T('\0')};
+
+	if (pFilePathW == NULL) {
+		result = YN_SET_ERR("Program error.", 0, 0);
+		goto EXIT;
+	}
+	wcscpy_s(m_LoadFilePathW, MAX_PATH, pFilePathW);
+	WideCharToMultiByte(CP_ACP, 0, pFilePathW, -1, filePath, _MAX_PATH, NULL, NULL);
+	result = _StopPlaybackAndOpenFile(filePath);
+	if (result != 0) goto EXIT;
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：フォルダを開く
+//******************************************************************************
+int MIDITrailApp::_OnMenuOpenFolder()
+{
+	int result = 0;
+	WCHAR folderPath[_MAX_PATH] = { L'\0' };
+	bool isSelected = false;
+
+	result = _SelectFolder(folderPath, _MAX_PATH, &isSelected);
+	if (result != 0) goto EXIT;
+
+	if (isSelected) {
+		//フルスクリーン時はシーン生成がクライアント領域を参照するため一旦メニューを隠す
+		if (m_isFullScreen) {
+			_HideMenu();
+		}
+		result = _StopPlaybackAndOpenFolder(folderPath);
+		if (result != 0) goto EXIT;
+	}
+
+	result = _ChangeMenuStyle();
+	if (result != 0) goto EXIT;
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：前ファイル
+//******************************************************************************
+int MIDITrailApp::_OnMenuPreviousFile()
+{
+	int result = 0;
+	bool isExist = false;
+	const WCHAR* pFilePath = NULL;
+
+	if (m_MIDIFileList.GetFileCount() == 0) goto EXIT;
+
+	m_MIDIFileList.SelectPreviousFile(&isExist);
+	if (isExist) {
+		pFilePath = m_MIDIFileList.GetFilePath(m_MIDIFileList.GetSelectedFileIndex());
+		result = _OpenFileW(pFilePath);
+		if (result != 0) goto EXIT;
+	}
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：次ファイル
+//******************************************************************************
+int MIDITrailApp::_OnMenuNextFile()
+{
+	int result = 0;
+	bool isExist = false;
+	const WCHAR* pFilePath = NULL;
+
+	if (m_MIDIFileList.GetFileCount() == 0) goto EXIT;
+
+	m_MIDIFileList.SelectNextFile(&isExist);
+	if (isExist) {
+		pFilePath = m_MIDIFileList.GetFilePath(m_MIDIFileList.GetSelectedFileIndex());
+		result = _OpenFileW(pFilePath);
+		if (result != 0) goto EXIT;
+	}
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：フォルダ演奏切替
+//******************************************************************************
+int MIDITrailApp::_OnMenuFolderPlayback()
+{
+	int result = 0;
+	m_isFolderPlayback = m_isFolderPlayback ? false : true;
+	result = _UpdateMenuCheckmark();
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：メニューバー表示切替
+//******************************************************************************
+int MIDITrailApp::_OnMenuMenuBar()
+{
+	int result = 0;
+	result = _ToggleMenuBar();
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニューバー表示切替
+//******************************************************************************
+int MIDITrailApp::_ToggleMenuBar()
+{
+	int result = 0;
+	m_isEnableMenuBar = m_isEnableMenuBar ? false : true;
+	if (m_isEnableMenuBar) {
+		result = _ShowMenu();
+	}
+	else {
+		result = _HideMenu();
+	}
+	if (result != 0) goto EXIT;
+	result = _ChangeWindowSize();
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：MyViewpoint へ移動
+//******************************************************************************
+int MIDITrailApp::_OnMenuMyViewpoint(unsigned long viewpointNo)
+{
+	int result = 0;
+	if (m_PlayStatus == NoData) goto EXIT;
+	result = _MoveToMyViewpoint(viewpointNo);
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：MyViewpoint 保存
+//******************************************************************************
+int MIDITrailApp::_OnMenuSaveMyViewpoint(unsigned long viewpointNo)
+{
+	int result = 0;
+	if (m_PlayStatus == NoData) goto EXIT;
+	result = _SaveMyViewpoint(viewpointNo);
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// MyViewpoint へ移動（設定ファイルから視点を復元）
+//******************************************************************************
+int MIDITrailApp::_MoveToMyViewpoint(unsigned long viewpointNo)
+{
+	int result = 0;
+	const float SENT = -1.0e30f;
+	const TCHAR* pName = NULL;
+	TCHAR section[256] = {_T('\0')};
+
+	//M3 (DX11): no MTScene -> drive the live camera (m_FpCam11) directly, mirroring
+	//the per-scene auto viewpoint (section "MyViewpoint-<N>-<sceneName>", now-line rel).
+	pName = _DX11SceneName();
+	if ((m_DX11Family == DX11_FAMILY_NONE) || (pName == NULL)) goto EXIT;
+
+	_stprintf_s(section, 256, _T("MyViewpoint-%d-"), viewpointNo);
+	_tcscat_s(section, 256, pName);
+	//live monitor keeps its own viewpoint, separate from playback
+	if ((m_PlayStatus == MonitorON) || (m_PlayStatus == MonitorOFF)) {
+		_tcscat_s(section, 256, _T("Live"));
+	}
+	if (m_ViewConf.SetCurSection(section) == 0) {
+		float x = SENT, y = 0, z = 0, phi = 0, theta = 0, roll = 0, autoRoll = 0;
+		m_ViewConf.GetFloat(_T("X"), &x, SENT);
+		if (x != SENT) {   // a viewpoint was saved for this slot
+			m_ViewConf.GetFloat(_T("Y"), &y, 0.0f);
+			m_ViewConf.GetFloat(_T("Z"), &z, 0.0f);
+			m_ViewConf.GetFloat(_T("Phi"), &phi, 0.0f);
+			m_ViewConf.GetFloat(_T("Theta"), &theta, 0.0f);
+			m_ViewConf.GetFloat(_T("ManualRollAngle"), &roll, 0.0f);
+			m_ViewConf.GetFloat(_T("AutoRollVelocity"), &autoRoll, 0.0f);
+			m_FpCam11.SetViewpointParam(x, y, z, phi, theta, roll, autoRoll);
+			m_IsAutoRollMode11 = (autoRoll != 0.0f);
+		}
+	}
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// MyViewpoint 保存（現在の視点を設定ファイルへ）
+//******************************************************************************
+int MIDITrailApp::_SaveMyViewpoint(unsigned long viewpointNo)
+{
+	int result = 0;
+	const TCHAR* pName = NULL;
+	TCHAR section[256] = {_T('\0')};
+
+	//M3 (DX11): no MTScene -> snapshot the live camera (m_FpCam11) into m_ViewConf
+	//(section "MyViewpoint-<N>-<sceneName>", now-line relative position).
+	pName = _DX11SceneName();
+	if ((m_DX11Family == DX11_FAMILY_NONE) || (pName == NULL)) goto EXIT;
+
+	{
+		float x = 0, y = 0, z = 0, phi = 0, theta = 0, roll = 0;
+		m_FpCam11.GetViewpointParam(&x, &y, &z, &phi, &theta, &roll);
+		float autoRoll = m_IsAutoRollMode11 ? m_FpCam11.GetAutoRollVelocity() : 0.0f;
+		_stprintf_s(section, 256, _T("MyViewpoint-%d-"), viewpointNo);
+		_tcscat_s(section, 256, pName);
+		//live monitor keeps its own viewpoint, separate from playback
+		if ((m_PlayStatus == MonitorON) || (m_PlayStatus == MonitorOFF)) {
+			_tcscat_s(section, 256, _T("Live"));
+		}
+		if (m_ViewConf.SetCurSection(section) == 0) {
+			m_ViewConf.SetFloat(_T("X"), x);
+			m_ViewConf.SetFloat(_T("Y"), y);
+			m_ViewConf.SetFloat(_T("Z"), z);
+			m_ViewConf.SetFloat(_T("Phi"), phi);
+			m_ViewConf.SetFloat(_T("Theta"), theta);
+			m_ViewConf.SetFloat(_T("ManualRollAngle"), roll);
+			m_ViewConf.SetFloat(_T("AutoRollVelocity"), autoRoll);
+		}
+	}
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// フォルダ選択ダイアログ（IFileOpenDialog, FOS_PICKFOLDERS）
+//******************************************************************************
+int MIDITrailApp::_SelectFolder(WCHAR* pFolderPath, unsigned long bufSize, bool* pIsSelected)
+{
+	int result = 0;
+	errno_t eresult = 0;
+	HRESULT hresult = 0;
+	HRESULT hrInit = 0;
+	DWORD options = 0;
+	IFileOpenDialog* pFileOpenDialog = NULL;
+	LPWSTR pFolderPathW = NULL;
+	IShellItem* pShellItem = NULL;
+
+	if ((pFolderPath == NULL) || (bufSize == 0) || (pIsSelected == NULL)) {
+		result = YN_SET_ERR("Program error.", 0, 0);
+		goto EXIT;
+	}
+	*pIsSelected = false;
+
+	//COM 初期化（このapp本体はCOMを初期化していないためスコープ内で行う）
+	hrInit = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+
+	hresult = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFileOpenDialog));
+	if (FAILED(hresult)) {
+		result = YN_SET_ERR("Windows API error.", GetLastError(), hresult);
+		goto EXIT;
+	}
+
+	pFileOpenDialog->GetOptions(&options);
+	pFileOpenDialog->SetOptions(options | FOS_PICKFOLDERS);
+
+	//m_hWndを指定すると演奏開始後のダイアログ表示でハングするためNULL指定
+	hresult = pFileOpenDialog->Show(NULL);
+	if (hresult == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+		goto EXIT;
+	}
+	if (FAILED(hresult)) {
+		result = YN_SET_ERR("Windows API error.", GetLastError(), hresult);
+		goto EXIT;
+	}
+
+	hresult = pFileOpenDialog->GetResult(&pShellItem);
+	if (FAILED(hresult)) {
+		result = YN_SET_ERR("Windows API error.", GetLastError(), hresult);
+		goto EXIT;
+	}
+	hresult = pShellItem->GetDisplayName(SIGDN_FILESYSPATH, &pFolderPathW);
+	if (FAILED(hresult)) {
+		result = YN_SET_ERR("Windows API error.", GetLastError(), hresult);
+		goto EXIT;
+	}
+
+	eresult = wcscpy_s(pFolderPath, bufSize, pFolderPathW);
+	if (eresult != 0) {
+		result = YN_SET_ERR("Program error.", eresult, 0);
+		goto EXIT;
+	}
+	*pIsSelected = true;
+
+EXIT:;
+	if (pFolderPathW != NULL) CoTaskMemFree(pFolderPathW);
+	if (pShellItem != NULL) pShellItem->Release();
+	if (pFileOpenDialog != NULL) pFileOpenDialog->Release();
+	if (SUCCEEDED(hrInit)) CoUninitialize();
+	return result;
+}
+
+//******************************************************************************
+// 指定フォルダ直下の MIDI ファイルリストを作成
+//******************************************************************************
+int MIDITrailApp::_MakeFileListWithFolder(const WCHAR* pFolderPath, MTFileList* pFileList)
+{
+	int result = 0;
+	if ((pFolderPath == NULL) || (pFileList == NULL)) {
+		result = YN_SET_ERR("Program error.", 0, 0);
+		goto EXIT;
+	}
+	result = pFileList->MakeFileListWithDirectory(pFolderPath, &m_RcpConv);
+	if (result != 0) goto EXIT;
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// 演奏停止とフォルダオープン（先頭ファイルを開く）
+//******************************************************************************
+int MIDITrailApp::_StopPlaybackAndOpenFolder(const WCHAR* pFolderPath)
+{
+	int result = 0;
+	MTFileList midiFileList;
+	const WCHAR* pFilePath = NULL;
+
+	//事前確認用の一時リストで MIDI ファイル有無を確認
+	result = _MakeFileListWithFolder(pFolderPath, &midiFileList);
+	if (result != 0) goto EXIT;
+
+	if (midiFileList.GetFileCount() == 0) {
+		MessageBox(m_hWnd, _T("MIDI data file is not found in the folder."), _T("WARNING"), MB_OK | MB_ICONWARNING);
+		goto EXIT;
+	}
+
+	//本番のファイルリストを作成し、先頭ファイルを開く
+	result = _MakeFileListWithFolder(pFolderPath, &m_MIDIFileList);
+	if (result != 0) goto EXIT;
+
+	m_MIDIFileList.SelectFirstFile();
+	pFilePath = m_MIDIFileList.GetFilePath(m_MIDIFileList.GetSelectedFileIndex());
+	result = _OpenFileW(pFilePath);
+	if (result != 0) goto EXIT;
+
+EXIT:;
+	return result;
+}
+// <<< add ced 20260627
 
 //******************************************************************************
 // メニュー選択：再生／一時停止／再開
@@ -1553,7 +2055,9 @@ void MIDITrailApp::_ApplyDX11Visibility()
 		m_Renderer11.SetTimeIndicatorRing11((!live && m_isEnableTimeIndicator) ? &m_TimeIndicatorRing11 : NULL);
 		m_Renderer11.SetNoteRipple11(m_isEnableRipple ? &m_NoteRipple11 : NULL);
 		m_Renderer11.SetPictBoardRing11(m_isEnablePianoKeyboard ? &m_PictBoardRing11 : NULL);
-		m_Renderer11.SetNoteLyrics11(NULL);   //ring scene has no lyrics
+		//ring lyrics (1.4.1 ported): playback only (needs the pre-built note list) and
+		//shares the Ripple toggle, same as the 3D/2D lyrics.
+		m_Renderer11.SetNoteLyrics11((!live && m_isEnableRipple) ? &m_NoteLyrics11 : NULL);
 		m_Renderer11.SetDashboard11(m_isEnableCounter ? &m_Dashboard11 : NULL);
 	}
 }
@@ -1630,6 +2134,27 @@ int MIDITrailApp::_OnMenuAutoSaveViewpoint()
 	if (result != 0) goto EXIT;
 
 	//シーン設定保存
+	result = _SaveSceneConf();
+	if (result != 0) goto EXIT;
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：View 表示設定の自動保存（ced 20260628）
+//******************************************************************************
+int MIDITrailApp::_OnMenuAutoSaveViewSettings()
+{
+	int result = 0;
+
+	m_isAutoSaveViewSettings = m_isAutoSaveViewSettings ? false : true;
+
+	//メニュー選択マーク更新
+	result = _UpdateMenuCheckmark();
+	if (result != 0) goto EXIT;
+
+	//シーン設定保存（フラグと、有効時は現在の View 表示トグルを書き出す）
 	result = _SaveSceneConf();
 	if (result != 0) goto EXIT;
 
@@ -1857,6 +2382,37 @@ EXIT:;
 }
 
 //******************************************************************************
+// メニュー選択：カラー設定（1.4.1 カラーパレット移植）
+//******************************************************************************
+int MIDITrailApp::_OnMenuOptionColor()
+{
+	int result = 0;
+
+	//設定ダイアログ表示
+	result = m_ColorCfgDlg.Show(m_hWnd);
+	if (result != 0) goto EXIT;
+
+	//変更された場合はシーンを再生成（MTNoteDesign が選択パレットを再読込する）
+	if (m_ColorCfgDlg.IsChanged()) {
+		result = _ChangeWindowSize();
+		if (result != 0) goto EXIT;
+	}
+
+EXIT:;
+	return result;
+}
+
+//******************************************************************************
+// メニュー選択：設定マネージャ（conf/*.ini を GUI 編集：Mod Mod 独自）
+//   ImGui ウィンドウの表示/非表示をトグルする。実描画はレンダラの ImGui フレーム内。
+//******************************************************************************
+int MIDITrailApp::_OnMenuConfigManager()
+{
+	m_ConfigMgr11.Toggle();
+	return 0;
+}
+
+//******************************************************************************
 // マニュアル表示
 //******************************************************************************
 int MIDITrailApp::_OnMenuManual()
@@ -1977,12 +2533,30 @@ int MIDITrailApp::_OnRecvSequencerMsg(
 				m_Sequencer.Rewind();
 				if (m_pScene != NULL) result = m_pScene->Rewind();
 				if (result != 0) goto EXIT;
+				//ced 20260630: DX9 互換 — 手動停止時はマウスで動かした視点を戻す。
+				//ced 20260703: 戻し先はハードコード既定ではなく「保存済み(なければ既定)」視点。
+				//（Auto save viewpoint ON なら直前の保存で現在位置＝保存視点となり実質維持、
+				//　OFF でも初期値ではなくユーザーが保存した視点へ戻る）
+				_ResetViewpointToSaved();
 			}
 			//通常の演奏終了の場合は次回の演奏時に巻き戻す
 			else {
 				m_isRewind = true;
+				//フォルダ演奏が有効なら次ファイルへ自動送り（1.4.1 移植。最後のファイル
+				//なら送らずに停止のまま）。リピートよりフォルダ演奏を優先する。
+				if (m_isFolderPlayback && (m_MIDIFileList.GetFileCount() > 0)) {
+					bool isExist = false;
+					m_MIDIFileList.SelectNextFile(&isExist);
+					if (isExist) {
+						const WCHAR* pFilePath = m_MIDIFileList.GetFilePath(m_MIDIFileList.GetSelectedFileIndex());
+						result = _OpenFileW(pFilePath);
+						if (result != 0) goto EXIT;
+						result = _OnMenuPlay();
+						if (result != 0) goto EXIT;
+					}
+				}
 				//リピート有効なら再生開始
-				if (m_isRepeat) {
+				else if (m_isRepeat) {
 					result = _OnMenuPlay();
 					if (result != 0) goto EXIT;
 				}
@@ -2048,6 +2622,7 @@ int MIDITrailApp::_OnRecvSequencerMsg(
 		else if (m_DX11Family == DX11_FAMILY_RING) {
 			m_NoteBoxRing11.Reset();
 			m_NoteRipple11.Reset();
+			m_NoteLyrics11.Reset();   //ring lyrics (1.4.1 ported)
 		}
 		else if (m_DX11Family == DX11_FAMILY_BOX) {
 			m_Kbd11.Reset();
@@ -2122,11 +2697,13 @@ int MIDITrailApp::_OnMouseButtonDown(
 		result = m_pScene->OnWindowClicked(button, wParam, lParam);
 		if (result != 0) goto EXIT;
 	}
-	//M3 (DX11, scene is NULL): toggle mouse-look (L) / auto-roll (M) on the camera, but
-	//ONLY while actually playing/paused or monitoring. Without this guard a left click
-	//with no song or while stopped grabbed the mouse (hidden + clipped cursor), since
-	//m_pScene is always NULL in the DX11 port so the branch above never ran.
-	else if ((m_PlayStatus != NoData) && (m_PlayStatus != Stop)) {
+	//M3 (DX11, scene is NULL): toggle mouse-look (L) / auto-roll (M) on the camera.
+	//Allowed whenever a song is LOADED (Stop/Play/Pause/Monitor) - matching DX9 where
+	//the scene handled the click in any non-title state. Only the title/no-song state
+	//(NoData) is excluded so a click there doesn't grab the mouse (hidden+clipped cursor).
+	//(ced 20260628: was also excluding Stop, which wrongly disabled mouse-look while
+	// paused/stopped on a loaded song; _ChangePlayStatus still auto-releases on stop.)
+	else if (m_PlayStatus != NoData) {
 		if (button == WM_LBUTTONDOWN) {
 			m_IsMouseCamMode11 = !m_IsMouseCamMode11;
 			m_FpCam11.SetMouseCamMode(m_IsMouseCamMode11);
@@ -2168,6 +2745,18 @@ int MIDITrailApp::_OnMouseMove(
 		}
 		else {
 			//メニューバー非表示
+			result = _HideMenu();
+			if (result != 0) goto EXIT;
+		}
+	}
+	//ウィンドウ表示の場合（1.4.1 移植：Menu Bar を非表示にしている時は、
+	//マウスを上端近くに乗せた時だけ一時的にメニューを表示する）
+	else if (!m_isEnableMenuBar) {
+		if (point.y <= 5) {
+			result = _ShowMenu();
+			if (result != 0) goto EXIT;
+		}
+		else {
 			result = _HideMenu();
 			if (result != 0) goto EXIT;
 		}
@@ -2509,7 +3098,9 @@ int MIDITrailApp::_LoadMIDIFile(
 	if (m_CmdLineParser.GetSwitch(CMDSW_DEBUG) == CMDSW_ON) {
 		_tcscat_s(smfDumpPath, _MAX_PATH, pPath);
 		_tcscat_s(smfDumpPath, _MAX_PATH, _T(".dump.txt"));
-		smfReader.SetLogPath(smfDumpPath);
+		WCHAR smfDumpPathW[_MAX_PATH] = { L'\0' };
+		MultiByteToWideChar(CP_ACP, 0, smfDumpPath, -1, smfDumpPathW, _MAX_PATH);
+		smfReader.SetLogPath(smfDumpPathW);
 	}
 
 	//ファイル読み込み
@@ -2583,6 +3174,14 @@ EXIT:;
 	m_LoadFilePathW[0] = L'\0';
 	SMFileReader::SetLoadProgressCallback(NULL, NULL);
 	m_isLoading = false;
+	//ced 20260629: ロード後にウィンドウを必ずアクティブ(フォアグラウンド)化する。
+	//DirectInput は DISCL_FOREGROUND のため、ドラッグ&ドロップ等でウィンドウが
+	//非アクティブのままロードするとキーボード/マウス(カメラ)が取得できず操作不能に
+	//なる（メニュー等をクリックしてアクティブ化すると直る、の根本原因）。
+	if (m_hWnd != NULL) {
+		SetForegroundWindow(m_hWnd);
+		SetFocus(m_hWnd);
+	}
 	if (_tcslen(smfTempPath) != 0) {
 		DeleteFile(smfTempPath);
 	}
@@ -2624,6 +3223,8 @@ void MIDITrailApp::_FeedDX11Tick(unsigned long tick, unsigned long playMs)
 		m_PictBoardRing11.SetCurTickTime(tick);
 		m_NoteRipple11.SetCurTickTime(tick);
 		m_NoteRipple11.SetPlayTimeMSec(playMs);
+		m_NoteLyrics11.SetCurTickTime(tick);   //ring lyrics (1.4.1 ported)
+		m_NoteLyrics11.SetPlayTimeMSec(playMs);
 		if (m_PlayStatus != MonitorON) {
 			m_Dashboard11.SetCurNotes(m_NoteBoxRing11.GetPlayedNoteCount(tick));
 		}
@@ -2842,7 +3443,7 @@ int MIDITrailApp::_OnMenuExportVideo()
 		if ((vconf.Initialize(_T("Video")) == 0) && (vconf.SetCurSection(_T("Video")) == 0)) {
 			int v = (int)params.codec;
 			vconf.GetInt(_T("Codec"), &v, (int)params.codec);
-			if ((v >= 0) && (v <= (int)MTVC_FFV1_ALPHA)) params.codec = (MTVideoCodec)v;
+			if ((v >= 0) && (v <= (int)MTVC_HEVC_AMF)) params.codec = (MTVideoCodec)v;
 			vconf.GetInt(_T("Width"),   &params.width,   params.width);
 			vconf.GetInt(_T("Height"),  &params.height,  params.height);
 			vconf.GetInt(_T("Fps"),     &params.fps,     params.fps);
@@ -3101,6 +3702,7 @@ int MIDITrailApp::_SetupDX11Scene()
 
 		//note lyrics (0x05 text drawn over the played notes); shares the Ripple toggle
 		m_NoteLyrics11.SetPitchBend(&m_NotePitchBend11);
+		m_NoteLyrics11.SetRingMode(false);   //planar layout for 3D/2D
 		m_NoteLyrics11.Create(pDevice, pContext, pSceneName, &m_SeqData);
 		m_Renderer11.SetNoteLyrics11(&m_NoteLyrics11);
 
@@ -3219,6 +3821,13 @@ int MIDITrailApp::_SetupDX11Scene()
 		m_NoteRipple11.Create(pDevice, pContext, pSceneName, &m_SeqData, true);
 		m_Renderer11.SetNoteRipple11(&m_NoteRipple11);
 
+		//ring lyrics (1.4.1 PianoRollRing lyrics, ported to DX11): reuse MTNoteLyrics11
+		//in ring mode so 0x05 text is laid on the ring like the notes.
+		m_NoteLyrics11.SetPitchBend(&m_NotePitchBend11);
+		m_NoteLyrics11.SetRingMode(true);
+		m_NoteLyrics11.Create(pDevice, pContext, pSceneName, &m_SeqData);
+		m_Renderer11.SetNoteLyrics11(&m_NoteLyrics11);
+
 		m_Renderer11.SetNoteBox11(NULL);
 		m_Renderer11.SetNoteRain11(NULL);
 		m_Renderer11.SetKeyboard11(NULL);
@@ -3267,6 +3876,19 @@ int MIDITrailApp::_SetupDX11Scene()
 
 	//M2.5: real first-person camera (free look + playback follow scroll).
 	//Rain progresses along Y (falling notes); box/ring scenes along X (time).
+	//ced 20260628: if this is just a re-setup of the SAME scene (switching songs in
+	//the same view mode, or a renderer re-init on resize/AA), keep the user's current
+	//viewpoint instead of snapping back to default/last-saved. Capture it NOW - while
+	//the OLD note-design + current tick are still active - so the now-line-relative
+	//position transfers correctly; reapplied after Initialize/Reset + the restore below.
+	bool keepView = m_HasPrevView && (m_SceneType == m_PrevViewSceneType)
+			&& (isLiveBox == m_PrevViewIsLive);
+	float kvX = 0, kvY = 0, kvZ = 0, kvPhi = 0, kvTheta = 0, kvRoll = 0, kvAutoRoll = 0;
+	if (keepView) {
+		m_FpCam11.GetViewpointParam(&kvX, &kvY, &kvZ, &kvPhi, &kvTheta, &kvRoll);
+		kvAutoRoll = m_IsAutoRollMode11 ? m_FpCam11.GetAutoRollVelocity() : 0.0f;
+	}
+
 	//Live: no song -> init with the live conf + NULL seq data (matches DX9;
 	//passing the empty &m_SeqData makes the camera divide by a 0 time-division
 	//and crash in TransformDX11).
@@ -3313,6 +3935,15 @@ int MIDITrailApp::_SetupDX11Scene()
 			}
 		}
 	}
+	//ced 20260628: restore the captured live viewpoint (overrides default/saved above)
+	//so the same-scene re-setup keeps exactly where the user was looking.
+	if (keepView) {
+		m_FpCam11.SetViewpointParam(kvX, kvY, kvZ, kvPhi, kvTheta, kvRoll, kvAutoRoll);
+		m_IsAutoRollMode11 = (kvAutoRoll != 0.0f);
+	}
+	m_PrevViewSceneType = m_SceneType;
+	m_PrevViewIsLive = isLiveBox;
+	m_HasPrevView = true;
 	m_Renderer11.SetCamera11(&m_FpCam11);
 
 	//M4.10: honor the View-menu effect toggles (keyboard/ripple/grid/etc.)
@@ -3363,7 +3994,9 @@ int MIDITrailApp::_AddMIDIFile(
 	if (m_CmdLineParser.GetSwitch(CMDSW_DEBUG) == CMDSW_ON) {
 		_tcscat_s(smfDumpPath, _MAX_PATH, pPath);
 		_tcscat_s(smfDumpPath, _MAX_PATH, _T(".dump.txt"));
-		smfReader.SetLogPath(smfDumpPath);
+		WCHAR smfDumpPathW[_MAX_PATH] = { L'\0' };
+		MultiByteToWideChar(CP_ACP, 0, smfDumpPath, -1, smfDumpPathW, _MAX_PATH);
+		smfReader.SetLogPath(smfDumpPathW);
 	}
 
 	//ファイルを一時シーケンスに読み込み
@@ -3566,7 +4199,7 @@ int MIDITrailApp::_ChangeWindowSize()
 	if (result != 0) goto EXIT;
 
 	//レンダラ初期化
-	result = m_Renderer11.Initialize(m_hWnd, m_MultiSampleType);
+	result = m_Renderer11.Initialize(m_hWnd, m_MultiSampleType, false, m_SuperSample);
 	if (result != 0) goto EXIT;
 
 	//M3 (DX11): the device was recreated - rebuild every DX11 component for the
@@ -3606,9 +4239,10 @@ int MIDITrailApp::_ChangePlayStatus(
 	//演奏状態変更
 	m_PlayStatus = status;
 
-	//leaving playback/monitoring: release any mouse-look grab so the cursor reappears
-	//(it must not stay hidden/clipped once we are stopped or have no song).
-	if (((status == Stop) || (status == NoData)) && m_IsMouseCamMode11) {
+	//ced 20260628: 曲アンロード(NoData)時のみマウスカメラ掴みを解除する。
+	//以前は Stop でも解除していたが、それだと停止中にマウスで見回せなくなるため、
+	//停止中はマウスカメラを維持する（カーソルを戻したい時は左クリックでトグル off）。
+	if ((status == NoData) && m_IsMouseCamMode11) {
 		m_IsMouseCamMode11 = false;
 		m_FpCam11.SetMouseCamMode(false);
 	}
@@ -3865,6 +4499,7 @@ int MIDITrailApp::_LoadSceneConf()
 {
 	int result = 0;
 	int autoSaveViewpoint = 0;
+	int val = 0;
 
 	result = m_ViewConf.SetCurSection(_T("Scene"));
 	if (result != 0) goto EXIT;
@@ -3874,6 +4509,27 @@ int MIDITrailApp::_LoadSceneConf()
 	if (result != 0) goto EXIT;
 
 	m_isAutoSaveViewpoint = (autoSaveViewpoint == 1);
+
+	//ced 20260628: View 表示設定の自動保存フラグ（既定は無効）
+	result = m_ViewConf.GetInt(_T("AutoSaveViewSettings"), &val, 0);
+	if (result != 0) goto EXIT;
+	m_isAutoSaveViewSettings = (val == 1);
+
+	//有効時のみ、保存済みの View 表示トグルを復元する。
+	//（未設定キーはコンストラクタ既定値をそのまま採用。実際の描画反映は次の
+	//  シーン構築時 _ApplyDX11Visibility / メニューチェックは _UpdateMenuCheckmark）
+	if (m_isAutoSaveViewSettings) {
+		m_ViewConf.GetInt(_T("EnablePianoKeyboard"),     &val, m_isEnablePianoKeyboard    ? 1 : 0); m_isEnablePianoKeyboard     = (val == 1);
+		m_ViewConf.GetInt(_T("EnableRipple"),            &val, m_isEnableRipple           ? 1 : 0); m_isEnableRipple            = (val == 1);
+		m_ViewConf.GetInt(_T("EnablePitchBend"),         &val, m_isEnablePitchBend        ? 1 : 0); m_isEnablePitchBend         = (val == 1);
+		m_ViewConf.GetInt(_T("EnablePitchBendAllNotes"), &val, m_isEnablePitchBendAllNotes? 1 : 0); m_isEnablePitchBendAllNotes = (val == 1);
+		m_ViewConf.GetInt(_T("EnableStars"),             &val, m_isEnableStars            ? 1 : 0); m_isEnableStars             = (val == 1);
+		m_ViewConf.GetInt(_T("EnableCounter"),           &val, m_isEnableCounter          ? 1 : 0); m_isEnableCounter           = (val == 1);
+		m_ViewConf.GetInt(_T("EnableBackgroundImage"),   &val, m_isEnableBackgroundImage  ? 1 : 0); m_isEnableBackgroundImage   = (val == 1);
+		m_ViewConf.GetInt(_T("EnableTimeIndicator"),     &val, m_isEnableTimeIndicator    ? 1 : 0); m_isEnableTimeIndicator     = (val == 1);
+		m_ViewConf.GetInt(_T("EnableGridBox"),           &val, m_isEnableGridBox          ? 1 : 0); m_isEnableGridBox           = (val == 1);
+		m_ViewConf.GetInt(_T("SingleKeyboard"),          &val, m_IsSingleKeyboard11       ? 1 : 0); m_IsSingleKeyboard11        = (val == 1);
+	}
 
 EXIT:;
 	return result;
@@ -3894,6 +4550,25 @@ int MIDITrailApp::_SaveSceneConf()
 	autoSaveViewpoint = m_isAutoSaveViewpoint ? 1 : 0;
 	result = m_ViewConf.SetInt(_T("AutoSaveViewpoint"), autoSaveViewpoint);
 	if (result != 0) goto EXIT;
+
+	//ced 20260628: View 表示設定の自動保存フラグ
+	result = m_ViewConf.SetInt(_T("AutoSaveViewSettings"), m_isAutoSaveViewSettings ? 1 : 0);
+	if (result != 0) goto EXIT;
+
+	//有効時のみ、現在の View 表示トグルを書き出す（無効時は触らない＝旧値を残すが
+	//復元側もフラグで gate しているので影響しない）
+	if (m_isAutoSaveViewSettings) {
+		m_ViewConf.SetInt(_T("EnablePianoKeyboard"),     m_isEnablePianoKeyboard     ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableRipple"),            m_isEnableRipple            ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnablePitchBend"),         m_isEnablePitchBend         ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnablePitchBendAllNotes"), m_isEnablePitchBendAllNotes ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableStars"),             m_isEnableStars             ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableCounter"),           m_isEnableCounter           ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableBackgroundImage"),   m_isEnableBackgroundImage   ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableTimeIndicator"),     m_isEnableTimeIndicator     ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableGridBox"),           m_isEnableGridBox           ? 1 : 0);
+		m_ViewConf.SetInt(_T("SingleKeyboard"),          m_IsSingleKeyboard11        ? 1 : 0);
+	}
 
 EXIT:;
 	return result;
@@ -3992,12 +4667,49 @@ EXIT:;
 }
 
 //******************************************************************************
+// ced 20260703: 視点を「保存済み(なければ既定)」へ戻す（DX11 ライブカメラ）
+//   手動停止時のリセット先を、ハードコード既定ではなく _LoadViewpoint と同じ
+//   保存視点にする。ロード時 (Initialize 直後) の視点復元ロジックと同一手順。
+//******************************************************************************
+void MIDITrailApp::_ResetViewpointToSaved()
+{
+	//まず既定視点（保存が無ければこれが最終結果）
+	if (m_SceneType == PianoRollRing) m_FpCam11.SetDefaultViewpointRing();
+	else m_FpCam11.SetDefaultViewpoint();
+
+	const TCHAR* pName = _DX11SceneName();
+	if ((m_DX11Family == DX11_FAMILY_NONE) || (pName == NULL)) return;
+
+	//保存済み視点があれば上書き（conf "Viewpoint-<scene>"、ライブは "...Live"）
+	const float SENT = -1.0e30f;
+	TCHAR section[256] = { _T('\0') };
+	_tcscat_s(section, 256, _T("Viewpoint-"));
+	_tcscat_s(section, 256, pName);
+	if ((m_PlayStatus == MonitorON) || (m_PlayStatus == MonitorOFF)) _tcscat_s(section, 256, _T("Live"));
+	if (m_ViewConf.SetCurSection(section) == 0) {
+		float x = SENT, y = 0, z = 0, phi = 0, theta = 0, roll = 0, autoRoll = 0;
+		m_ViewConf.GetFloat(_T("X"), &x, SENT);
+		if (x != SENT) {   // a viewpoint was saved for this scene
+			m_ViewConf.GetFloat(_T("Y"), &y, 0.0f);
+			m_ViewConf.GetFloat(_T("Z"), &z, 0.0f);
+			m_ViewConf.GetFloat(_T("Phi"), &phi, 0.0f);
+			m_ViewConf.GetFloat(_T("Theta"), &theta, 0.0f);
+			m_ViewConf.GetFloat(_T("ManualRollAngle"), &roll, 0.0f);
+			m_ViewConf.GetFloat(_T("AutoRollVelocity"), &autoRoll, 0.0f);
+			m_FpCam11.SetViewpointParam(x, y, z, phi, theta, roll, autoRoll);
+			m_IsAutoRollMode11 = (autoRoll != 0.0f);
+		}
+	}
+}
+
+//******************************************************************************
 // グラフィック設定読み込み
 //******************************************************************************
 int MIDITrailApp::_LoadGraphicConf()
 {
 	int result = 0;
 	int multiSampleType = 0;
+	int superSample = 0;   //ced 20260628
 
 	result = m_GraphicConf.SetCurSection(_T("Anti-aliasing"));
 	if (result != 0) goto EXIT;
@@ -4016,6 +4728,16 @@ int MIDITrailApp::_LoadGraphicConf()
 	}
 	else {
 		m_MultiSampleType = 0;
+	}
+
+	//ced 20260628: スーパーサンプリング(SSAA)倍率（同 Anti-aliasing セクション）
+	result = m_GraphicConf.GetInt(_T("SuperSample"), &superSample, MT_GRAPHIC_SUPER_SAMPLE_DEF);
+	if (result != 0) goto EXIT;
+	if ((DX_SUPER_SAMPLE_MIN <= superSample) && (superSample <= DX_SUPER_SAMPLE_MAX)) {
+		m_SuperSample = superSample;
+	}
+	else {
+		m_SuperSample = 1;   //OFF
 	}
 
 EXIT:;
@@ -4101,6 +4823,10 @@ int MIDITrailApp::_OnDestroy()
 		//if (result != 0) goto EXIT;
 		//エラーが発生しても処理を続行する
 	}
+
+	//ced 20260628: View 表示設定の保存（有効時は現在のトグルを書き出す）。
+	//エラーが発生しても処理を続行する。
+	_SaveSceneConf();
 
 	//演奏を止める
 	if (m_PlayStatus == Play) {
@@ -4267,6 +4993,9 @@ int MIDITrailApp::_UpdateMenuCheckmark()
 	//リピート
 	_CheckMenuItem(IDM_REPEAT, m_isRepeat);
 
+	//フォルダ演奏（1.4.1 移植）
+	_CheckMenuItem(IDM_FOLDER_PLAYBACK, m_isFolderPlayback);
+
 	//シーン種別選択
 	//TAG:シーン追加
 	_CheckMenuItem(IDM_VIEW_3DPIANOROLL, false);
@@ -4330,6 +5059,7 @@ int MIDITrailApp::_UpdateMenuCheckmark()
 
 	//自動視点保存
 	_CheckMenuItem(IDM_AUTO_SAVE_VIEWPOINT, m_isAutoSaveViewpoint);
+	_CheckMenuItem(IDM_AUTO_SAVE_VIEWSETTINGS, m_isAutoSaveViewSettings);  //ced 20260628
 
 	//フルスクリーン
 	_CheckMenuItem(IDM_FULLSCREEN, m_isFullScreen);

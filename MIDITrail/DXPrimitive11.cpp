@@ -46,6 +46,12 @@ static const char* DXP11_SHADER =
 	"  return o;\n"
 	"}\n"
 	"float4 PSMain(VSOUT i) : SV_TARGET {\n"
+	"  float4 base0 = i.color;\n"
+	"  if (g_Options.x > 0.5) { base0 = g_Tex.Sample(g_Samp, i.uv) * i.color; }\n"
+	// ced 20260713: DX9's D3DRS_LIGHTING is a per-scene switch - the 2D and ring scenes
+	// turn it off, so their primitives draw at their plain vertex colour. g_Options.y = 0
+	// reproduces that; without it the 2D live notes came out shaded, unlike DX9.
+	"  if (g_Options.y < 0.5) { return base0; }\n"
 	"  float3 n = normalize(i.normal);\n"
 	"  float3 L = normalize(g_LightDir.xyz);\n"
 	// DX9's 3D scene (PianoRoll3DMod) lit with TWO opposing directional lights
@@ -54,9 +60,7 @@ static const char* DXP11_SHADER =
 	// Add the opposing fill light + DX9's 1.2 diffuse so those faces are lit again.
 	"  float ndl = saturate(dot(n, -L)) + saturate(dot(n, L));\n"
 	"  float3 light = saturate(g_Ambient.rgb + 1.2 * ndl);\n"
-	"  float4 base = i.color;\n"
-	"  if (g_Options.x > 0.5) { base = g_Tex.Sample(g_Samp, i.uv) * i.color; }\n"
-	"  return float4(base.rgb * light, base.a);\n"
+	"  return float4(base0.rgb * light, base0.a);\n"
 	"}\n";
 
 //******************************************************************************
@@ -70,6 +74,7 @@ DXPrimitive11::DXPrimitive11()
 	m_IndexNum = 0;
 	XMStoreFloat4x4(&m_World, XMMatrixIdentity());
 	m_Ambient = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
+	m_LightEnable = true;   // DX9 D3DRS_LIGHTING; the 2D / ring scenes switch it off
 	m_pSRV = NULL;
 	m_Additive = false;
 	m_LineTopology = false;
@@ -276,6 +281,7 @@ void DXPrimitive11::UnlockIndex(ID3D11DeviceContext* pContext) { pContext->Unmap
 //******************************************************************************
 void DXPrimitive11::SetWorldMatrix(const XMMATRIX& world) { XMStoreFloat4x4(&m_World, world); }
 void DXPrimitive11::SetMaterialAmbient(float r, float g, float b) { m_Ambient = XMFLOAT4(r, g, b, 1.0f); }
+void DXPrimitive11::SetLightEnable(bool enable) { m_LightEnable = enable; }
 void DXPrimitive11::SetTexture(ID3D11ShaderResourceView* pSRV) { m_pSRV = pSRV; }
 
 //******************************************************************************
@@ -312,7 +318,7 @@ int DXPrimitive11::Draw(ID3D11DeviceContext* pContext, const XMMATRIX& viewProj,
 		c.world = m_World;
 		c.lightDir = lightDir;
 		c.ambient = m_Ambient;
-		c.options = XMFLOAT4((m_pSRV != NULL) ? 1.0f : 0.0f, 0, 0, 0);
+		c.options = XMFLOAT4((m_pSRV != NULL) ? 1.0f : 0.0f, m_LightEnable ? 1.0f : 0.0f, 0, 0);
 		hr = pContext->Map(s_pConstBuf, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms);
 		if (FAILED(hr)) return YN_SET_ERR("DirectX API error.", hr, 0);
 		memcpy(ms.pData, &c, sizeof(c));

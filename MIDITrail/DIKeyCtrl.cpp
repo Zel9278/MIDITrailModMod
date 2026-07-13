@@ -186,13 +186,22 @@ int DIKeyCtrl::GetKeyStatus()
 	HRESULT hresult = DI_OK;
 
 	hresult = m_pDIDevice->GetDeviceState(256, m_KeyStatus);
+
+	// ced 20260629: 入力ロスト/未取得（ウィンドウ非アクティブ、ImGui テキスト入力後の
+	// フォーカス変化など）の場合は再取得して1回だけリトライする。これをしないと
+	// m_KeyStatus が前回値のまま凍結し、WASD 等を押しても反映されず「キーボードだけ
+	// 効かない」状態になる（マウスは別デバイスなので生きる）。
 	if (FAILED(hresult)) {
-		result = YN_SET_ERR("DirectInput API error.", hresult, 0);
-		goto EXIT;
+		if (SUCCEEDED(m_pDIDevice->Acquire())) {
+			hresult = m_pDIDevice->GetDeviceState(256, m_KeyStatus);
+		}
 	}
 
-	//ウィンドウが非アクティブ状態であるとGetDeviceState()はエラーになる(0x8007000c)
-	//どうしよう・・・
+	// それでも取得できない場合はキー状態をクリアする（キー押しっぱ／凍結に見えるのを防ぐ）。
+	// エラーにはせず「このフレームは入力なし」として次フレームで自然復帰させる。
+	if (FAILED(hresult)) {
+		ZeroMemory(m_KeyStatus, sizeof(m_KeyStatus));
+	}
 
 EXIT:;
 	return result;

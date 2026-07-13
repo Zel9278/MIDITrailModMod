@@ -150,7 +150,12 @@ int MTNoteBoxLive11::Create(
 	m_pCpuBuf = malloc((size_t)m_VertCapacity * sizeof(DXP11_VERTEX));
 	if (m_pCpuBuf == NULL) { result = YN_SET_ERR("Could not allocate memory.", 0, 0); goto EXIT; }
 
-	m_Prim.SetMaterialAmbient(1.0f, 1.0f, 1.0f);   // 2D scenes are unlit (full color)
+	// ced 20260713: DX9 lights the live note boxes only in the 3D scene (MTScenePianoRoll3DLive
+	// enables the two directional lights; the 2D and ring live scenes clear m_IsEnableLight).
+	// The port used to force ambient 1.0 to keep every scene unlit, which is why the 3D live
+	// notes were as flat as the 2D ones. Light the 3D scene, leave the others alone.
+	m_Prim.SetLightEnable((pSceneName != NULL) && (_tcsncmp(pSceneName, _T("PianoRoll3D"), 11) == 0));
+	m_Prim.SetMaterialAmbient(0.1f, 0.1f, 0.1f);   // note material ambient 0.5 * light ambient 0.2
 	m_Prim.SetAdditiveBlend(false);
 
 	m_Ready = true;

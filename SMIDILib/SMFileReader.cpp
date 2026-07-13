@@ -4,7 +4,7 @@
 //
 // 標準MIDIファイル読み込みクラス
 //
-// Copyright (C) 2010-2013 WADA Masashi. All Rights Reserved.
+// Copyright (C) 2010-2022 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
@@ -42,7 +42,7 @@ SMFileReader::~SMFileReader(void)
 // ログ出力パス設定
 //******************************************************************************
 int SMFileReader::SetLogPath(
-		const TCHAR* pLogPath
+		const WCHAR* pLogPath
 	)
 {
 	int result = 0;
@@ -51,17 +51,17 @@ int SMFileReader::SetLogPath(
 	m_IsLogOut = false;
 
 	if (pLogPath == NULL) {
-		m_LogPath[0] = '\0';
+		m_LogPath[0] = L'\0';
 	}
 	else {
-		eresult = _tcscpy_s(m_LogPath, MAX_PATH, pLogPath);
+		eresult = wcscpy_s(m_LogPath, MAX_PATH, pLogPath);
 		if (eresult != 0) {
 			result = YN_SET_ERR("Program error.", 0, 0);
 			goto EXIT;
 		}
 	}
 
-	if (_tcslen(m_LogPath) > 0) {
+	if (wcslen(m_LogPath) > 0) {
 		m_IsLogOut = true;
 	}
 
@@ -186,6 +186,10 @@ int SMFileReader::_LoadImpl(
 		goto EXIT;
 	}
 
+	//RIFFヘッダ読み飛ばし
+	result = _SkipRIFFHeader(hFile);
+	if (result != 0 ) goto EXIT;
+
 	//ヘッダ読み込み
 	result = _ReadChunkHeader(hFile, &chunkTypeSection, &chunkDataSection);
 	if (result != 0 ) goto EXIT;
@@ -238,7 +242,7 @@ int SMFileReader::_LoadImpl(
 	if (result != 0 ) goto EXIT;
 
 	//ファイル名登録
-	pSeqData->SetFileName(pNameForLog);
+	pSeqData->SetFileName(PathFindFileNameW(pPathW));
 
 EXIT:;
 	if (hFile != NULL) {
@@ -258,6 +262,61 @@ EXIT:;
 		hOsFile = INVALID_HANDLE_VALUE;
 	}
 	_CloseLogFile();
+	return result;
+}
+
+//******************************************************************************
+// RIFFヘッダ読み飛ばし
+//******************************************************************************
+int SMFileReader::_SkipRIFFHeader(
+		HMMIO hFile
+	)
+{
+	int result = 0;
+	long apiresult = 0;
+	SMFRIFFChunkHeader chunkHeader;
+	SMFRIFFSubChunkHeader subChunkHeader;
+
+	//RIFFチャンクの読み込み
+	apiresult = mmioRead(hFile, (HPSTR)&chunkHeader, sizeof(SMFRIFFChunkHeader));
+	if (apiresult != sizeof(SMFRIFFChunkHeader)) {
+		result = YN_SET_ERR("File read error.", GetLastError(), apiresult);
+		goto EXIT;
+	}
+
+	//識別子チェック
+	if (memcmp(chunkHeader.chunkID, "RIFF", 4) != 0) {
+		//RIFFではないため読み取り位置を先頭に戻して正常終了
+		apiresult = mmioSeek(hFile, 0, SEEK_SET);
+		if (apiresult == -1) {
+			result = YN_SET_ERR("File read error.", GetLastError(), apiresult);
+			goto EXIT;
+		}
+		goto EXIT;
+	}
+
+	//フォーマットチェック
+	if (memcmp(chunkHeader.format, "RMID", 4) != 0) {
+		//RIFFであるがMIDIデータではないためファイル異常とみなす
+		result = YN_SET_ERR("Invalid data found.", 0, 0);
+		goto EXIT;
+	}
+
+	//RIFFサブチャンクの読み込み
+	apiresult = mmioRead(hFile, (HPSTR)&subChunkHeader, sizeof(SMFRIFFSubChunkHeader));
+	if (apiresult != sizeof(SMFRIFFSubChunkHeader)) {
+		result = YN_SET_ERR("File read error.", GetLastError(), apiresult);
+		goto EXIT;
+	}
+
+	//フォーマットチェック
+	//  LISTチャンクには対応しない
+	if (memcmp(subChunkHeader.chunkID, "data", 4) != 0) {
+		result = YN_SET_ERR("Invalid data found.", 0, 0);
+		goto EXIT;
+	}
+
+EXIT:;
 	return result;
 }
 
@@ -370,6 +429,7 @@ int SMFileReader::_ReadTrackEvents(
 	)
 {
 	int result = 0;
+	long apiresult = 0;
 	unsigned long readSize = 0;
 	unsigned long deltaTime = 0;
 	unsigned long offset = 0;
@@ -432,10 +492,15 @@ int SMFileReader::_ReadTrackEvents(
 
 		//トラック終端
 		if (isEndOfTrack) {
-			if (readSize != chunkSize) {
-				//データ不正
-				result = YN_SET_ERR("Invalid data found.", readSize, chunkSize);
-				goto EXIT;
+			//指定されたチャンクサイズまでスキップする（念のため）
+			if (readSize < chunkSize) {
+				offset = chunkSize - readSize;
+				apiresult = mmioSeek(hFile, offset, SEEK_CUR);
+				if (apiresult == -1) {
+					result = YN_SET_ERR("File read error.", GetLastError(), apiresult);
+					goto EXIT;
+				}
+				readSize += offset;
 			}
 			break;
 		}
@@ -757,7 +822,7 @@ int SMFileReader::_ReadEventMeta(
 			break;
 	}
 
-	if (status == 0x2F) {
+	if (type == 0x2F) {
 		*pIsEndOfTrack = true;
 	}
 
@@ -825,9 +890,9 @@ int SMFileReader::_OpenLogFile()
 	int result = 0;
 	errno_t eresult = 0;
 
-	if (_tcslen(m_LogPath) == 0) goto EXIT;
+	if (wcslen(m_LogPath) == 0) goto EXIT;
 
-	eresult = _tfopen_s(&m_pLogFile, m_LogPath, _T("w"));
+	eresult = _wfopen_s(&m_pLogFile, m_LogPath, L"w");
 	if (eresult != 0) {
 		result = YN_SET_ERR("Log file open error.", 0, 0);
 		goto EXIT;

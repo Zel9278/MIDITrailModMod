@@ -214,13 +214,18 @@ int DIMouseCtrl::GetMouseStatus()
 	}
 
 	hresult = m_pDIDevice->GetDeviceState(sizeof(DIMOUSESTATE2), &m_MouseState);
+
+	// ced 20260629: 入力ロスト/未取得なら再取得して1回リトライ（キーボードと同様）。
 	if (FAILED(hresult)) {
-		result = YN_SET_ERR("DirectInput API error.", hresult, 0);
-		goto EXIT;
+		if (SUCCEEDED(m_pDIDevice->Acquire())) {
+			hresult = m_pDIDevice->GetDeviceState(sizeof(DIMOUSESTATE2), &m_MouseState);
+		}
 	}
 
-	//ウィンドウが非アクティブ状態であるとGetDeviceState()はエラーになる(0x8007000c)
-	//どうしよう・・・
+	// 取得できないフレームは移動量ゼロ扱い（前回値の固着を防ぐ）。
+	if (FAILED(hresult)) {
+		ZeroMemory(&m_MouseState, sizeof(m_MouseState));
+	}
 
 EXIT:;
 	return result;
