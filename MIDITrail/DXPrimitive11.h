@@ -68,6 +68,8 @@ public:
 
 	void SetWorldMatrix(const DirectX::XMMATRIX& world);
 	void SetMaterialAmbient(float r, float g, float b);
+	// DX9's per-scene D3DRS_LIGHTING: off = draw at the plain vertex colour (2D / ring scenes)
+	void SetLightEnable(bool enable);
 	void SetTexture(ID3D11ShaderResourceView* pSRV);   // NULL = untextured (use vertex color)
 	void SetAdditiveBlend(bool isAdditive) { m_Additive = isAdditive; }  // glow (SRCALPHA/ONE)
 	void SetLineTopology(bool isLines) { m_LineTopology = isLines; }     // LINELIST instead of TRIANGLELIST
@@ -85,6 +87,7 @@ private:
 	unsigned long m_IndexNum;
 	DirectX::XMFLOAT4X4 m_World;
 	DirectX::XMFLOAT4 m_Ambient;
+	bool m_LightEnable;
 	ID3D11ShaderResourceView* m_pSRV;
 	bool m_Additive;
 	bool m_LineTopology;

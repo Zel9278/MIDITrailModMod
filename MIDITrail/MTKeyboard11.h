@@ -1,4 +1,4 @@
-//******************************************************************************
+﻿//******************************************************************************
 //
 // MIDITrail / MTKeyboard11
 //
@@ -46,7 +46,8 @@ public:
 	void Release();
 
 	int DrawDX11(ID3D11DeviceContext* pContext, const DirectX::XMMATRIX& viewProj,
-			const DirectX::XMFLOAT4& lightDir, float rollAngle);
+			const DirectX::XMFLOAT4& lightDir, float rollAngle,
+			const DirectX::XMFLOAT3& camPos = DirectX::XMFLOAT3(0, 0, 0));
 
 	// current playback tick: drives the keyboard's X follow position AND the
 	// key-press animation (tick-based, so it is robust to dropped note on/off
@@ -137,6 +138,30 @@ private:
 
 	SubKbd m_Subs[MTKBD11_MAX_KEYBOARDS];
 	unsigned long m_NumKbd;
+
+	// ced 20260629: infinite keyboard (NotLive box 2D/3D). The keyboard pattern is extended
+	// below note 0 and above note 127. ced 20260703: the extension octaves are APPENDED into
+	// each keyboard's OWN vertex/index buffer (their octave X-offset baked into the vertex
+	// positions), in note order, so they are drawn by the SAME single Draw call, with the same
+	// world matrix and the same primitive submission order as the original 0-127 keys. There is
+	// no separate buffer and no second draw, so the extension is rendered by the identical path
+	// as the main keyboard -> it looks exactly like the original on every GPU (a separate second
+	// draw used to let some GPUs cover the extension's raised black keys with white keys). The
+	// extension part is static (never animated); _ApplyKeyStates only touches notes 0-127.
+	// Off by default ([PianoKeyboard] InfiniteKeyboard).
+	bool           m_InfiniteKbd;           // enabled (conf flag) AND not live
+	float          m_OctaveWidthX;          // local-X width of one octave (12 semitones)
+	DXP11_VERTEX*  m_pExtVerts;             // extension vertices (X-offset baked), note order
+	unsigned long* m_pExtIdx;               // extension indices, 0-based within the extension block
+	unsigned long  m_ExtVertNum;
+	unsigned long  m_ExtIdxNum;
+	// m_pExtIdx is laid out [below-note-0 octaves][note 128+ octaves]. This is the index count of
+	// the first (below-0) part, so Create() can submit the whole keyboard in true note order:
+	// below-0 extension -> main 0-127 -> note-128+ extension. Consistent submission order makes
+	// the semi-transparent keys blend the same at the seams as in the interior (fixes a GPU-
+	// dependent boundary artifact that appeared only with alpha<255 key colors + depth write).
+	unsigned long  m_ExtBottomIdxNum;
+	int  _BuildExtCPU(const void* pCpuVB, const unsigned long* pCpuIB);
 
 	int _ApplyKeyStates(ID3D11DeviceContext* pContext, SubKbd* pSub, unsigned long elapsedMs);
 	void _AdvanceWindow(SubKbd* pSub, unsigned long tick);

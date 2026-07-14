@@ -237,6 +237,9 @@ protected:
 	NoteColorType m_NoteColorType;
 	D3DXCOLOR m_NoteColor[16];
 	D3DXCOLOR m_NoteColorOfScale[12];
+	//ced 20260628: CHANNELTRACK 用。各チャンネル(0-15)が最初に現れたトラック番号(-1=未設定)。
+	//ノート順に GetTrackChannelColor() が埋める（Initialize でリセット）。
+	int m_FirstTrackForChannel[16];
 	D3DXCOLOR m_ActiveNoteEmissive;
 	D3DXCOLOR m_GridLineColor;
 	D3DXCOLOR m_PlaybackSectionColor;

@@ -323,6 +323,16 @@ int MTFFmpegPipe::Open(const MTVideoExportParams& params, const TCHAR* pFFmpegEx
 			_sntprintf_s(codecArgs, _countof(codecArgs), _TRUNCATE,
 				_T("-c:v ffv1 -pix_fmt bgra"));
 			break;
+		case MTVC_H264_AMF:
+			_sntprintf_s(codecArgs, _countof(codecArgs), _TRUNCATE,
+				_T("-c:v h264_amf -quality quality -rc cqp -qp_i %d -qp_p %d -pix_fmt yuv420p"),
+				q ? q : 22, q ? q : 22);
+			break;
+		case MTVC_HEVC_AMF:
+			_sntprintf_s(codecArgs, _countof(codecArgs), _TRUNCATE,
+				_T("-c:v hevc_amf -quality quality -rc cqp -qp_i %d -qp_p %d -pix_fmt yuv420p"),
+				q ? q : 24, q ? q : 24);
+			break;
 		case MTVC_H264_CPU:
 		default:
 			_sntprintf_s(codecArgs, _countof(codecArgs), _TRUNCATE,

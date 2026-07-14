@@ -1,4 +1,4 @@
-//******************************************************************************
+﻿//******************************************************************************
 //
 // MIDITrail / MTKeyboard11
 //
@@ -30,6 +30,13 @@ MTKeyboard11::MTKeyboard11()
 	m_pBaseVerts = NULL;
 	m_VertexNum = 0;
 	m_NumKbd = 0;
+	m_InfiniteKbd = false;          //ced 20260629
+	m_OctaveWidthX = 0.0f;
+	m_pExtVerts = NULL;             //ced 20260703
+	m_pExtIdx = NULL;
+	m_ExtVertNum = 0;
+	m_ExtIdxNum = 0;
+	m_ExtBottomIdxNum = 0;
 	m_LastAnimMs = 0;
 	m_KeyDownDurMs = 40;   // DX9 default; overridden from the design in Create
 	m_KeyUpDurMs = 40;
@@ -79,6 +86,12 @@ void MTKeyboard11::Release()
 	m_NumKbd = 0;
 	if (m_pSRV != NULL) { m_pSRV->Release(); m_pSRV = NULL; }
 	if (m_pBaseVerts != NULL) { free(m_pBaseVerts); m_pBaseVerts = NULL; }
+	if (m_pExtVerts != NULL) { free(m_pExtVerts); m_pExtVerts = NULL; }   //ced 20260703
+	if (m_pExtIdx != NULL) { free(m_pExtIdx); m_pExtIdx = NULL; }
+	m_ExtVertNum = 0;
+	m_ExtIdxNum = 0;
+	m_ExtBottomIdxNum = 0;
+	m_InfiniteKbd = false;          //ced 20260629
 	m_VertexNum = 0;
 	m_CurTickTime = 0;
 	m_Ready = false;
@@ -281,7 +294,9 @@ int MTKeyboard11::_ApplyKeyStates(ID3D11DeviceContext* pContext, SubKbd* pSub, u
 		DXP11_VERTEX* pv = NULL;
 		result = pSub->prim.LockVertex(pContext, &pv);
 		if (result == 0) {
-			memcpy(pv, pWork, (size_t)m_VertexNum * sizeof(DXP11_VERTEX));
+			// whole-buffer DISCARD map: copy main + the static extension tail (infinite kbd)
+			unsigned long total = m_VertexNum + (m_InfiniteKbd ? m_ExtVertNum : 0);
+			memcpy(pv, pWork, (size_t)total * sizeof(DXP11_VERTEX));
 			pSub->prim.UnlockVertex(pContext);
 		}
 	}
@@ -397,27 +412,64 @@ int MTKeyboard11::Create(
 	if (m_pBaseVerts == NULL) { result = YN_SET_ERR("Could not allocate memory.", 0, 0); goto EXIT; }
 	memcpy(m_pBaseVerts, pCpuVB, (size_t)vn * sizeof(DXP11_VERTEX));
 
-	// per-keyboard GPU buffers + CPU work mirror
-	for (i = 0; i < m_NumKbd; i++) {
-		DXP11_VERTEX* pv = NULL;
-		unsigned long* pi = NULL;
-		result = m_Subs[i].prim.CreateVertexBuffer(pDevice, vn);
-		if (result != 0) goto EXIT;
-		result = m_Subs[i].prim.CreateIndexBuffer(pDevice, in);
-		if (result != 0) goto EXIT;
-		result = m_Subs[i].prim.LockVertex(pContext, &pv);
-		if (result != 0) goto EXIT;
-		memcpy(pv, pCpuVB, (size_t)vn * sizeof(DXP11_VERTEX));
-		m_Subs[i].prim.UnlockVertex(pContext);
-		result = m_Subs[i].prim.LockIndex(pContext, &pi);
-		if (result != 0) goto EXIT;
-		memcpy(pi, pCpuIB, (size_t)in * sizeof(unsigned long));
-		m_Subs[i].prim.UnlockIndex(pContext);
-		m_Subs[i].prim.SetMaterialAmbient(0.55f, 0.55f, 0.55f);
+	//ced 20260703: 無限鍵盤（NotLive box 2D/3D）。拡張オクターブを CPU 上に用意しておき、下の
+	//ループで各キーボードの頂点/インデックスバッファの「末尾に連結」する。別バッファ・別 Draw を
+	//作らず、通常の 0-127 と全く同じ 1 回の Draw・同じワールド行列・同じ送信順で描かれるため、
+	//どの GPU でも通常鍵盤と同一の見た目になる。拡張部は静的（_ApplyKeyStates は 0-127 のみ触る）。
+	m_InfiniteKbd = (m_DesignMod.IsInfiniteKeyboard() && !m_LiveMode);
+	if (m_InfiniteKbd) {
+		if (_BuildExtCPU(pCpuVB, pCpuIB) != 0) {
+			if (m_pExtVerts != NULL) { free(m_pExtVerts); m_pExtVerts = NULL; }
+			if (m_pExtIdx != NULL) { free(m_pExtIdx); m_pExtIdx = NULL; }
+			m_ExtVertNum = 0;
+			m_ExtIdxNum = 0;
+			m_InfiniteKbd = false;
+		}
+	}
 
-		m_Subs[i].pWorkVerts = malloc((size_t)vn * sizeof(DXP11_VERTEX));
-		if (m_Subs[i].pWorkVerts == NULL) { result = YN_SET_ERR("Could not allocate memory.", 0, 0); goto EXIT; }
-		memcpy(m_Subs[i].pWorkVerts, pCpuVB, (size_t)vn * sizeof(DXP11_VERTEX));
+	// per-keyboard GPU buffers + CPU work mirror. When the infinite keyboard is on, each
+	// buffer is (main 0-127) followed by (extension octaves) so a single Draw covers both.
+	{
+		unsigned long extV = m_InfiniteKbd ? m_ExtVertNum : 0;
+		unsigned long extI = m_InfiniteKbd ? m_ExtIdxNum : 0;
+		for (i = 0; i < m_NumKbd; i++) {
+			DXP11_VERTEX* pv = NULL;
+			unsigned long* pi = NULL;
+			result = m_Subs[i].prim.CreateVertexBuffer(pDevice, vn + extV);
+			if (result != 0) goto EXIT;
+			result = m_Subs[i].prim.CreateIndexBuffer(pDevice, in + extI);
+			if (result != 0) goto EXIT;
+			result = m_Subs[i].prim.LockVertex(pContext, &pv);
+			if (result != 0) goto EXIT;
+			memcpy(pv, pCpuVB, (size_t)vn * sizeof(DXP11_VERTEX));
+			if (extV > 0) memcpy(pv + vn, m_pExtVerts, (size_t)extV * sizeof(DXP11_VERTEX));
+			m_Subs[i].prim.UnlockVertex(pContext);
+			result = m_Subs[i].prim.LockIndex(pContext, &pi);
+			if (result != 0) goto EXIT;
+			if (extI > 0) {
+				// Submit the whole keyboard in TRUE note order so the semi-transparent keys blend
+				// (and any coplanar depth tie resolves) exactly the same at the seams as in the
+				// interior: [below-note-0 extension] -> [main 0-127] -> [note-128+ extension].
+				// Extension indices are 0-based within the extension vertex block -> shift by vn.
+				unsigned long botI = m_ExtBottomIdxNum;   // below-0 index count
+				unsigned long pos = 0;
+				for (unsigned long e = 0; e < botI; e++) pi[pos++] = m_pExtIdx[e] + vn;      // below 0
+				memcpy(pi + pos, pCpuIB, (size_t)in * sizeof(unsigned long)); pos += in;      // main 0-127
+				for (unsigned long e = botI; e < extI; e++) pi[pos++] = m_pExtIdx[e] + vn;    // note 128+
+			}
+			else {
+				memcpy(pi, pCpuIB, (size_t)in * sizeof(unsigned long));
+			}
+			m_Subs[i].prim.UnlockIndex(pContext);
+			m_Subs[i].prim.SetMaterialAmbient(0.55f, 0.55f, 0.55f);
+
+			// CPU work mirror holds the FULL buffer (main + static extension tail); the
+			// extension part is never rewritten, so a whole-buffer DISCARD upload keeps it.
+			m_Subs[i].pWorkVerts = malloc((size_t)(vn + extV) * sizeof(DXP11_VERTEX));
+			if (m_Subs[i].pWorkVerts == NULL) { result = YN_SET_ERR("Could not allocate memory.", 0, 0); goto EXIT; }
+			memcpy(m_Subs[i].pWorkVerts, pCpuVB, (size_t)vn * sizeof(DXP11_VERTEX));
+			if (extV > 0) memcpy((DXP11_VERTEX*)m_Subs[i].pWorkVerts + vn, m_pExtVerts, (size_t)extV * sizeof(DXP11_VERTEX));
+		}
 	}
 
 	//----------------------------------
@@ -510,6 +562,84 @@ EXIT:;
 }
 
 //******************************************************************************
+// ced 20260703: build the infinite-keyboard extension octaves into CPU arrays (m_pExtVerts /
+// m_pExtIdx), each octave's X-offset BAKED into its vertex positions. Create() then APPENDS
+// these to every keyboard's own vertex/index buffer, so the extension is drawn by the same
+// single Draw call, in the same primitive submission order, as the original 0-127 keys ->
+// there is no separate buffer and no second draw, hence no cross-draw z-fight and it looks
+// identical to the main keyboard on every GPU.
+//
+// Keys are emitted in NOTE ORDER (per octave: pitch class 0..11 = C,C#,D,...,B), exactly the
+// order BuildGeometryCPU emits the main keyboard, so the black keys (which are physically
+// raised) resolve in front the same way they do for the original keys. Indices are 0-based
+// within the extension block; Create() shifts them by the main vertex count on upload.
+//
+// Octave k renders notes 12k..12k+11 from the interior octave source (notes 12-23) with
+// pos.x += (k-1)*octaveWidth so note 12 lands on posX(12k). The top gap (notes 128-131) is
+// the interior keys G#,A,A#,B (pitch classes 8-11) copied with +9*octaveWidth.
+//******************************************************************************
+int MTKeyboard11::_BuildExtCPU(const void* pCpuVB, const unsigned long* pCpuIB)
+{
+	const int EXT_OCTAVES = 24;                 // octaves extended each direction (>= any zoom)
+	const DXP11_VERTEX* srcV = (const DXP11_VERTEX*)pCpuVB;
+	int p = 0, j = 0;
+	unsigned long i = 0;
+
+	// per-key source ranges for the interior octave (notes 12-23, indexed by pitch class 0-11)
+	unsigned long kv0[12], kvn[12], ki0[12], kin[12];
+	for (p = 0; p < 12; p++) {
+		m_Geom.GetKeyVertexRange((unsigned char)(12 + p), &kv0[p], &kvn[p]);
+		m_Geom.GetKeyIndexRange((unsigned char)(12 + p), &ki0[p], &kin[p]);
+	}
+	unsigned long vp24 = 0, vn24 = 0;
+	m_Geom.GetKeyVertexRange(24, &vp24, &vn24);
+	m_OctaveWidthX = srcV[vp24].pos[0] - srcV[kv0[0]].pos[0];   // note 24 (C) - note 12 (C)
+	if ((m_OctaveWidthX <= 0.0f) || (kvn[0] == 0)) return -1;
+
+	// per-key instance list in NOTE ORDER: lowest extension octave up to the highest. Full
+	// octaves below note 0, then note 0-127 belong to the main buffer (skipped here), then the
+	// note 128-131 gap-fill (interior pitch classes 8-11 at +9 octaves), then full octaves above.
+	struct Inst { int p; float ox; };
+	Inst inst[(2 * EXT_OCTAVES) * 12 + 4];
+	int ni = 0;
+	for (int k = -EXT_OCTAVES; k <= -1; k++)
+		for (p = 0; p < 12; p++) { inst[ni].p = p; inst[ni].ox = (float)(k - 1) * m_OctaveWidthX; ni++; }
+	for (p = 8; p <= 11; p++) { inst[ni].p = p; inst[ni].ox = 9.0f * m_OctaveWidthX; ni++; }   // 128-131
+	for (int k = 11; k <= 10 + EXT_OCTAVES; k++)
+		for (p = 0; p < 12; p++) { inst[ni].p = p; inst[ni].ox = (float)(k - 1) * m_OctaveWidthX; ni++; }
+
+	unsigned long totalV = 0, totalI = 0;
+	for (j = 0; j < ni; j++) { totalV += kvn[inst[j].p]; totalI += kin[inst[j].p]; }
+	if ((totalV == 0) || (totalI == 0)) return -1;
+
+	m_pExtVerts = (DXP11_VERTEX*)malloc((size_t)totalV * sizeof(DXP11_VERTEX));
+	m_pExtIdx = (unsigned long*)malloc((size_t)totalI * sizeof(unsigned long));
+	if ((m_pExtVerts == NULL) || (m_pExtIdx == NULL)) return -1;
+
+	// note order: emit each key's vertices/indices in sequence (identical to the main path). The
+	// first (EXT_OCTAVES*12) instances are the below-note-0 keys; record their index count so
+	// Create() can submit below-0 -> main -> note128+ (= one continuous note-ordered keyboard).
+	const int bottomKeyCount = EXT_OCTAVES * 12;
+	unsigned long vbase = 0, ibase = 0;
+	m_ExtBottomIdxNum = 0;
+	for (j = 0; j < ni; j++) {
+		if (j == bottomKeyCount) m_ExtBottomIdxNum = ibase;   // end of the below-0 block
+		int pc = inst[j].p;
+		for (i = 0; i < kvn[pc]; i++) {
+			m_pExtVerts[vbase + i] = srcV[kv0[pc] + i];
+			m_pExtVerts[vbase + i].pos[0] += inst[j].ox;
+		}
+		for (i = 0; i < kin[pc]; i++)
+			m_pExtIdx[ibase + i] = pCpuIB[ki0[pc] + i] - kv0[pc] + vbase;
+		vbase += kvn[pc];
+		ibase += kin[pc];
+	}
+	m_ExtVertNum = totalV;
+	m_ExtIdxNum = totalI;
+	return 0;
+}
+
+//******************************************************************************
 // Draw: each keyboard with its own base transform + key-press state
 //   world = Scale . Trans(basePos[idx]) . RotX(-90) . RotZ(90) . RotX(roll) . Trans(playbackPos)
 //******************************************************************************
@@ -517,7 +647,8 @@ int MTKeyboard11::DrawDX11(
 		ID3D11DeviceContext* pContext,
 		const XMMATRIX& viewProj,
 		const XMFLOAT4& lightDir,
-		float rollAngle
+		float rollAngle,
+		const XMFLOAT3& camPos
 	)
 {
 	if (!m_Ready) return 0;
@@ -576,6 +707,8 @@ int MTKeyboard11::DrawDX11(
 		XMMATRIX world = S * B * R1 * R2 * R3 * P;
 		pSub->prim.SetWorldMatrix(world);
 		pSub->prim.SetTexture(m_pSRV);
+		//ced 20260703: 無限鍵盤の拡張オクターブは同じ prim バッファの末尾に連結済みなので、この
+		//1 回の Draw が通常鍵盤(0-127)と拡張部を全く同じ状態・同じ順序でまとめて描く。
 		pSub->prim.Draw(pContext, viewProj, lightDir, -1, 0);
 	}
 

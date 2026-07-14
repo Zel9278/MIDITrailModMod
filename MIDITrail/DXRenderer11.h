@@ -1,4 +1,4 @@
-//******************************************************************************
+﻿//******************************************************************************
 //
 // MIDITrail / DXRenderer11
 //
@@ -32,6 +32,7 @@ class MTNoteBoxLive11;
 class MTNoteRainLive11;
 class MTGridBox11;
 class MTDashboard11;
+class MTConfigManager11;
 class MTTimeIndicator11;
 class MTPictBoard11;
 class DXNoteRain11;
@@ -60,7 +61,8 @@ public:
 	virtual ~DXRenderer11();
 
 	//Initialize / terminate
-	int Initialize(HWND hWnd, unsigned long multiSampleType = 0, bool isFullScreen = false);
+	int Initialize(HWND hWnd, unsigned long multiSampleType = 0, bool isFullScreen = false,
+			unsigned long superSample = 1);
 	void Terminate();
 
 	//ImGui context
@@ -136,6 +138,7 @@ public:
 
 	//M4: the dashboard (on-screen info text) to draw (NULL = none)
 	void SetDashboard11(MTDashboard11* pDash) { m_pDashboard11 = pDash; }
+	void SetConfigManager11(MTConfigManager11* pCfg) { m_pConfigMgr11 = pCfg; }
 
 	//M4.4: the time indicator (playback section) to draw (NULL = none)
 	void SetTimeIndicator11(MTTimeIndicator11* pTI) { m_pTimeIndicator11 = pTI; }
@@ -162,6 +165,28 @@ private:
 	unsigned int m_Width;
 	unsigned int m_Height;
 	unsigned int m_SampleCount;   // MSAA sample count (1 = off)
+
+	// ced 20260628: SSAA (supersampling). When m_SuperSample > 1 the 3D scene is
+	// rendered to an offscreen target at (m_Width*ss x m_Height*ss) then downscaled
+	// (linear) to the backbuffer. Works on any GPU and stacks on top of MSAA.
+	unsigned int m_SuperSample;            // 1 = off, 2/3/4 = NxN supersampling
+	ID3D11Texture2D*          m_pSSColor;  // SS-size scene color (single sample, has SRV)
+	ID3D11RenderTargetView*   m_pSSRTV;
+	ID3D11ShaderResourceView* m_pSSSRV;
+	ID3D11Texture2D*          m_pSSDepth;  // SS-size depth
+	ID3D11DepthStencilView*   m_pSSDSV;
+	// downscale blit (fullscreen triangle that samples m_pSSSRV with a linear sampler)
+	ID3D11VertexShader*       m_pBlitVS;
+	ID3D11PixelShader*        m_pBlitPS;
+	ID3D11Buffer*             m_pBlitCB;   // { float2 texelSize; float factor; float pad; }
+	ID3D11SamplerState*       m_pBlitSampler;
+	ID3D11DepthStencilState*  m_pBlitNoDepth;
+	ID3D11RasterizerState*    m_pBlitRaster;
+	int  _InitBlit();
+	void _ReleaseBlit();
+	int  _CreateSSTargets(unsigned int width, unsigned int height);
+	void _ReleaseSSTargets();
+	void _BlitSSToBackbuffer();
 
 	// TEMP (M2 verification): a test quad drawn via DXPrimitive11
 	DXPrimitive11 m_TestQuad;
@@ -258,6 +283,7 @@ private:
 
 	// M4: dashboard overlay (not owned; NULL = none)
 	MTDashboard11* m_pDashboard11;
+	MTConfigManager11* m_pConfigMgr11;
 
 	// M4.4: time indicator / playback section (not owned; NULL = none)
 	MTTimeIndicator11* m_pTimeIndicator11;

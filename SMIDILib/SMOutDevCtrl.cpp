@@ -4,7 +4,7 @@
 //
 // MIDI出力デバイス制御クラス
 //
-// Copyright (C) 2010-2014 WADA Masashi. All Rights Reserved.
+// Copyright (C) 2010-2021 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
@@ -585,6 +585,38 @@ void SMOutDevCtrl::_UnloadKDMAPI()
 	m_pSendDirectData = NULL;
 	m_pSendDirectLongData = NULL;
 	m_isKDMAPIAvailable = false;
+}
+
+//******************************************************************************
+// 全ポートサウンドオフ
+//******************************************************************************
+int SMOutDevCtrl::SoundOffAll()
+{
+	int result = 0;
+	int i = 0;
+	UINT apiresult = 0;
+	unsigned long msg = 0;
+	unsigned char portNo = 0;
+
+	for (portNo = 0; portNo < SM_MIDIOUT_PORT_NUM_MAX; portNo++) {
+
+		//ポートとデバイスが存在しなければスキップ
+		if (!m_PortInfo[portNo].isExist) continue;
+		if (m_PortInfo[portNo].hMIDIOut == NULL) continue;
+
+		//全トラックサウンドオフ
+		for (i = 0; i < 16; i++) {
+			msg = (0x78 << 8) | (0xB0 | i);
+			apiresult = midiOutShortMsg(m_PortInfo[portNo].hMIDIOut, msg);
+			if (apiresult != MMSYSERR_NOERROR) {
+				result = YN_SET_ERR("MIDI OUT device output error.", apiresult, portNo);
+				goto EXIT;
+			}
+		}
+	}
+
+EXIT:;
+	return result;
 }
 
 } // end of namespace

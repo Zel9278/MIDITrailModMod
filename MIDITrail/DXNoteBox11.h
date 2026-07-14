@@ -84,14 +84,24 @@ private:
 	struct DXNB11_INSTANCE {
 		float vmin[3];
 		float vmax[3];
-		unsigned long color;   // D3DCOLOR 0xAARRGGBB (read as B8G8R8A8_UNORM)
+		unsigned long color;   // D3DCOLOR 0xAARRGGBB (RGB used; A byte = pitch-bend index)
 		float hidden;
+		float alpha;           // real note opacity 0..1 (from the colour's A byte) - ced 20260627
 	};
 
 	MTNoteDesign m_NoteDesign;
 	SMNoteList m_NoteList;
 	MTNotePitchBend* m_pPitchBend;   // per-(port,ch) pitch bend (not owned; NULL = none)
 	bool m_BendAllNotes;             // M4.22: bend the whole channel (not just sounding)
+
+	// ced 20260713: DX9 scene lighting. MTScenePianoRoll3D lights the note boxes with
+	// two opposing directional lights (D3DLIGHT9 direction (1,-1,2) / (-1,1,-2), diffuse
+	// 1.2, ambient 0.2 / 0.0) against the note material's ambient 0.5; MTScenePianoRoll2D
+	// sets m_IsEnableLight = FALSE, so its notes are flat. Off unless the scene is 3D.
+	bool m_LightEnable;
+	DirectX::XMFLOAT3 m_LightDir;    // direction the light travels (D3DLIGHT9 convention)
+	float m_LightDiffuse;            // light diffuse level (DX9: 1.2)
+	float m_LightAmbient;            // material ambient * sum(light ambient) (DX9: 0.5 * 0.2)
 
 	bool m_Ready;
 	bool m_CollapsePorts;   // merge all ports onto port 0's row (single keyboard)
@@ -112,7 +122,7 @@ private:
 	static ID3D11PixelShader* s_pPS;
 	static ID3D11InputLayout* s_pLayout;
 	static ID3D11Buffer* s_pConstBuf;
-	static ID3D11Buffer* s_pTemplateVB;   // 8 unit-box corners
+	static ID3D11Buffer* s_pTemplateVB;   // 24 box vertices (corner mask + face normal)
 	static ID3D11Buffer* s_pBoxIB;        // 36 indices (12 triangles)
 	static ID3D11RasterizerState* s_pRaster;
 	static ID3D11BlendState* s_pBlend;

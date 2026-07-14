@@ -4,7 +4,7 @@
 //
 // メタイベントクラス
 //
-// Copyright (C) 2010 WADA Masashi. All Rights Reserved.
+// Copyright (C) 2010-2022 WADA Masashi. All Rights Reserved.
 //
 //******************************************************************************
 
@@ -82,7 +82,7 @@ unsigned long SMEventMeta::GetTempo()
 	}
 
 	pData = m_pEvent->GetDataPtr();
-	tempo = (pData[0] << 16) | (pData[1] << 8) | (pData[3]);
+	tempo = (pData[0] << 16) | (pData[1] << 8) | (pData[2]);
 
 EXIT:;
 	return tempo;
@@ -134,10 +134,27 @@ int SMEventMeta::GetText(
 	*pText = pBuf;
 
 // >>> add 20170528 yossiepon begin
+// >>> modify 20251101 yossiepon begin
+
+	//// rtrim
+	//pText->erase(std::find_if(pText->rbegin(), pText->rend(),
+	//	std::not1(std::ptr_fun<int, int>(std::isspace))).base(), pText->end());
+
 	// rtrim
+	struct local_func {
+		static int isspace(int ch)
+		{
+			// デバッグ実行時にstd::isspaceが標準ライブラリ内のアサーションに引っ掛かるので
+			// 負の値が行かないように修正
+			return std::isspace(static_cast<unsigned int>(ch) & 0xff);
+		}
+	};
 	pText->erase(std::find_if(pText->rbegin(), pText->rend(),
-		std::not1(std::ptr_fun<int, int>(std::isspace))).base(), pText->end());
+		std::not1(std::ptr_fun<int, int>(local_func::isspace))).base(), pText->end());
+
+// <<< modify 20251101 yossiepon end
 // <<< add 20170528 yossiepon end
+
 
 EXIT:;
 	delete [] pBuf;
