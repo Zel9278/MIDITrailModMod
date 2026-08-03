@@ -83,8 +83,14 @@ static const char* DXNB11_SHADER =
 	"  VSOUT o;\n"
 	"  float apass = g_Active.w;\n"   // 'pass' is an HLSL reserved word
 	"  float active = ((i.vmin.x <= g_Active.x) && (g_Active.x <= i.vmax.x)) ? 1.0 : 0.0;\n"
-	"  float span = max(i.vmax.x - i.vmin.x, 0.000001);\n"
-	"  float prog = saturate((g_Active.x - i.vmin.x) / span);\n"
+	// how far the now-line has passed this note's onset, in world X
+	"  float since = g_Active.x - i.vmin.x;\n"
+	// DX9 decays the flash/swell over a FIXED time (ActiveNoteDuration), carried here as a
+	// world-X distance in g_LAmb.g. A long sustained note therefore flashes only at its
+	// onset and then sits at its base colour, instead of staying half-white for its length.
+	// decay <= 0 (tempo unknown / stopped): flash only at the exact onset.
+	"  float decay = g_LAmb.g;\n"
+	"  float prog = (decay > 0.0) ? saturate(since / decay) : ((since <= 0.0) ? 0.0 : 1.0);\n"
 	"  float emph = (apass >= 0.5) ? active * (1.0 - prog) : 0.0;\n"
 	// a note is drawn by exactly one pass: pass 1 if it is sounding, pass 0 if it is not
 	"  float hide = saturate(i.hidden + abs(apass - active));\n"
@@ -109,7 +115,12 @@ static const char* DXNB11_SHADER =
 	"  float3 n = normalize(mul(float4(i.nrm, 0.0), g_World).xyz);\n"
 	"  float3 L = normalize(g_Light.xyz);\n"
 	"  float ndl = saturate(dot(n, -L)) + saturate(dot(n, L));\n"
-	"  float3 lit = saturate(i.color.rgb * (g_Light.w * ndl) + g_LAmb.rgb);\n"
+	// DX9 fixed-function lights the note by its OWN colour: ambient and diffuse are both
+	// reflectances of the vertex colour, so the term stays coloured and only clamps per
+	// channel - it never washes toward white. Adding a grey ambient floor instead (the old
+	// code) makes a bright face bleach to pastel. g_LAmb.r = light ambient (0.2), g_Light.w
+	// = diffuse (1.2). See MTScenePianoRoll3D::_SetLightColor.
+	"  float3 lit = saturate(i.color.rgb * (g_LAmb.r + g_Light.w * ndl));\n"
 	"  o.col = float4(lerp(i.color.rgb, lit, g_LAmb.w), i.alpha);\n"   // carry real opacity to the PS
 	"  o.emph = emph;\n"
 	"  o.aflag = (apass >= 0.5) ? active : 0.0;\n"   // 1 while the note is sounding (pass 1)
@@ -134,12 +145,13 @@ DXNoteBox11::DXNoteBox11()
 	m_pPitchBend = NULL;
 	m_BendAllNotes = false;
 	m_CurTickTime = 0;
+	m_SongTickPerMs = 0.0;
 	m_WorldMove = XMFLOAT3(0.0f, 0.0f, 0.0f);
 	//DX9 MTScenePianoRoll3D light 1 (light 2 is its exact opposite, folded into the shader)
 	m_LightEnable = false;
 	m_LightDir = XMFLOAT3(1.0f, -1.0f, 2.0f);
 	m_LightDiffuse = 1.2f;
-	m_LightAmbient = 0.5f * 0.2f;   // note material ambient * (light1 + light2 ambient)
+	m_LightAmbient = 0.2f;   // DX9 light0 ambient (light1 ambient is 0); applied to the note colour
 	m_pInstanceVB = NULL;
 	m_AllNoteNum = 0;
 	m_pNoteStartTime = NULL;
@@ -643,10 +655,17 @@ int DXNoteBox11::DrawDX11(
 		// opts.x = bend whole channel; opts.yzw = active-note emissive ([ActiveNote] EmissiveRGBA)
 		D3DXCOLOR emis = m_NoteDesign.GetActiveNoteEmissive();
 		c.opts = XMFLOAT4(m_BendAllNotes ? 1.0f : 0.0f, emis.r, emis.g, emis.b);
+		// active-note flash/swell decay distance in world X. DX9 decays over a fixed time
+		// (ActiveNoteDuration ms since onset), NOT over the note's length. Convert that time
+		// to a world-X span at the current tempo: ms -> ticks (m_SongTickPerMs) -> X (xPerTick).
+		// 0 when the tempo is unknown (stopped) -> the shader flashes onset-only.
+		float xPerTick = m_NoteDesign.GetPlayPosX(1 << 20) / (float)(1 << 20);
+		float decayX = (float)((double)m_NoteDesign.GetActiveNoteDuration() * m_SongTickPerMs) * xPerTick;
 		// world-space light (the shader rotates the normals into world space, as DX9 does)
 		c.light = XMFLOAT4(m_LightDir.x, m_LightDir.y, m_LightDir.z, m_LightDiffuse);
-		c.lamb  = XMFLOAT4(m_LightAmbient, m_LightAmbient, m_LightAmbient,
-				m_LightEnable ? 1.0f : 0.0f);
+		// r = light ambient (colours the note); g = active-flash decay distance (world X);
+		// w = lighting enable
+		c.lamb  = XMFLOAT4(m_LightAmbient, decayX, 0.0f, m_LightEnable ? 1.0f : 0.0f);
 		// per-(port&0xF,ch) pitch-bend Y shift (active notes bend in pitch)
 		ZeroMemory(c.pb, sizeof(c.pb));
 		if (m_pPitchBend != NULL) {

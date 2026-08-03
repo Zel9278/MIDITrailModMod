@@ -103,6 +103,10 @@ int MTGridBox11::Create(
 
 	m_Prim.SetLineTopology(true);
 	m_Prim.SetMaterialAmbient(1.0f, 1.0f, 1.0f);   // lines are unlit (use vertex color)
+	// ced 20260716: the grid is a backdrop reference drawn before the notes. It must not
+	// write depth - otherwise a fully transparent grid (conf GridLineRGBA alpha 00) still
+	// leaves depth behind and punches invisible gaps into the notes that cross it.
+	m_Prim.SetDepthWrite(false);
 	m_Ready = true;
 
 EXIT:;

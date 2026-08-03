@@ -3240,9 +3240,14 @@ void MIDITrailApp::_FeedDX11Tick(unsigned long tick, unsigned long playMs)
 		m_NoteBox11.SetCurTickTime(tick);
 		// song time scale (ticks/ms) for the keyboard press envelope: TimeDivision*BPM/60000.
 		// Uses the SONG tempo (not play speed) - the polled tick already carries speed.
+		// The note box uses the same scale to decay the active-note flash over a fixed time.
 		{
 			unsigned long tpqn = m_SeqData.GetTimeDivision();
-			if (tpqn > 0) m_Kbd11.SetSongTickPerMs((double)tpqn * (double)m_CurSongBPM / 60000.0);
+			if (tpqn > 0) {
+				double tickPerMs = (double)tpqn * (double)m_CurSongBPM / 60000.0;
+				m_Kbd11.SetSongTickPerMs(tickPerMs);
+				m_NoteBox11.SetSongTickPerMs(tickPerMs);
+			}
 		}
 		m_Kbd11.SetCurTickTime(tick);
 		m_NoteRipple11.SetCurTickTime(tick);

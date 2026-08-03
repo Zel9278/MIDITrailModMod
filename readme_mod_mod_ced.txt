@@ -55,10 +55,35 @@ build MIDITrail.sln. ImGui is fetched from the package manager automatically.
 　　　まとまる＝ライト軸に沿った面は明るく、直交する面は環境光まで落ちる（＝立体感）。
 　　　シーン名で 3D のときだけ点灯（2D/リングは DX9 同様そのまま無灯＝フラット）。
 　　　ワールド行列のロール回転は、法線ではなくライト側を逆回転させて等価に処理。
+・[FIX] 環境光を「灰色の定数加算」から「ノート色への乗算」に修正（＝DX9 と同じ）。
+　→当初 lit = 色×拡散 + 灰色環境光(0.1) としていたが、これだと明るい面で色が白へ寄り、
+　　ノートが淡いパステルに退色していた。DX9 の固定機能ライティングは環境光も拡散光も
+　　「頂点色（ノート色）の反射率」なので、色 ×(環境光0.2 + 拡散1.2×ndl) となり、明るい面でも
+　　チャンネルごとにクランプされるだけで白飛びしない。単ノートで DX9 の (238,128,128) に対し
+　　DX11 (238,125,125)＝誤差 3/255 まで一致。
 ・[FIX] 発音中ノートを「通常ノート側では非表示」にした（＝DX9 と同じ）。DX9 は発音中、全ノート
 　バッファ側の元ノートを非表示にし(MTNoteBox::_HideNoteBox)、別バッファで膨らませて描き直している。
 　移植版は pass 0（全ノート）でも発音中ノートを描いたまま pass 1 で重ねていたため、同じ位置に
 　箱が 2 個ある二重描画になっていた。1 つのノートは必ずどちらか一方のパスだけで描くようにした。
+・[FIX] 発音中の白フラッシュ／膨らみの減衰を「発音開始からの固定時間(ActiveNoteDuration)」に
+　修正（＝DX9 と同じ）。従来はフラッシュ量 emph を「ノート長で正規化」していたため、長いノートは
+　発音中ずっと半分白いまま＝2D/3D とも面が白っぽく退色していた。DX9 は GetActiveNoteColor が
+　発音開始からの経過 ms で rate = 1 - 経過/Duration と減衰させるので、長いノートでも冒頭で一瞬
+　光ってすぐ元の色に戻る。現在テンポ(TimeDivision×BPM/60000)からフラッシュ減衰距離をワールド X に
+　換算してシェーダへ渡し、DX9 と同じ挙動にした。
+・[FIX] グリッド（格子線）が深度を書かないようにした。グリッドはノートより先に描く背景の目安
+　なのに深度を書いていたため、透明なグリッド（conf の GridLineRGBA アルファ 00＝不可視）でも
+　深度だけ残り、グリッド線と交差するノートに「見えない切り欠き（破線状の隙間）」を作っていた。
+　DXPrimitive11 に深度書き込みトグル(SetDepthWrite)を追加し、グリッドは深度テストのみ・書き込み
+　なしにした。背景として最初に描かれ、鍵盤・ボード・ノートが後からその上に描かれるので前後は不変。
+　（実機 A/B：グリッド深度書き込み ON では横方向のノートが切り欠かれ、OFF では連続して描かれる。）
+・[FIX] チャンネルごとに極小の深度オフセットを与え、ノート同士の z-fighting を解消した。
+　→ノート箱は奥行き 0.1 に対しチャンネル間隔は ChStep（約 0.01）しかないため、別チャンネルの箱同士が
+　　めり込む。面が拮抗深度で交差する所は画素ごとに前後が反転する＝黒 MIDI の斑。投影後の深度に
+　　pbIdx(port×16+ch)×5e-6×w を加え、チャンネルを深度バッファ上だけで確実に順序付けした。
+　　オフセットは D24 で数百レベル＝1 画素にも満たず見た目は不変、鍵盤・ボードとの前後も不変。
+　　（実測：この対策の前でも DX11 は DX9 の約 1/12 しか縞が出ていない。DX11 は深度 D24、DX9 は D16
+　　なので元々 DX11 の方が精度が高い。本対策でさらに減る。）
 ・[FIX] ノートの深度書き込みを有効に戻した（＝DX9 と同じ）。カリングも DX9 と同じ両面描画
 　（D3DCULL_NONE）のまま。
 　→移植版はノートの深度書き込みを切っており、重なったノートを深度ではなく描画順で解決していた。
@@ -105,10 +130,38 @@ Mod 20260713: 3D scene note shading restored to match DX9
   bright, faces across it fall to the ambient floor - the 3D relief is back. Lighting is enabled
   by scene name, so the 2D and ring scenes stay flat exactly as in DX9. The world matrix's roll
   is handled by rotating the light the other way instead of the normals.
+* [FIX] Ambient light MULTIPLIES the note colour instead of being added as a grey constant (as in
+  DX9). The first cut computed lit = colour*diffuse + grey_ambient(0.1), which bleaches a bright
+  face toward white and left the notes a washed-out pastel. DX9's fixed-function lighting treats
+  both ambient and diffuse as reflectances of the vertex (note) colour, so lit = colour*(ambient
+  0.2 + diffuse 1.2*ndl): a bright face just clamps per channel and keeps its hue, never washing
+  out. A single note now reads DX11 (238,125,125) against DX9 (238,128,128) - within 3/255.
 * [FIX] A sounding note is now hidden from the normal-note pass, as in DX9 (MTNoteBox::_HideNoteBox
   blanks the original note in the all-notes buffer for as long as it sounds, and the swollen copy
   is drawn from a separate buffer). The port drew the note in BOTH passes, leaving two coincident
   boxes. Each note is now drawn by exactly one of the two passes.
+* [FIX] The active-note white flash / swell decays over a FIXED time (ActiveNoteDuration ms from
+  onset), as in DX9 - not over the note's length. The flash amount emph used to be normalised by
+  the note's span, so a long sustained note stayed half-white for its whole duration, bleaching
+  the note field in both 2D and 3D. DX9's GetActiveNoteColor decays rate = 1 - elapsed/Duration
+  by elapsed ms since onset, so even a long note flashes only at its start and then returns to its
+  base colour. The flash decay distance is converted to world X from the current tempo
+  (TimeDivision*BPM/60000) and passed to the shader.
+* [FIX] The grid no longer writes depth. The grid is a backdrop reference drawn before the notes,
+  but it was writing depth, so a fully transparent grid (conf GridLineRGBA alpha 00 = invisible)
+  still left depth behind and punched invisible notches - a dashed-gap look - into the notes that
+  crossed it. DXPrimitive11 got a depth-write toggle (SetDepthWrite); the grid now tests depth but
+  does not write it. It still draws first as a backdrop, with the keyboard / board / notes over it,
+  so front-to-back ordering is unchanged. (On-device A/B: with the grid writing depth the horizontal
+  notes are notched; with it off they draw continuously.)
+* [FIX] Each channel gets a tiny depth offset to kill note-vs-note z-fighting. A note box is 0.1
+  deep while channels are only ChStep (~0.01) apart, so different channels' boxes interpenetrate;
+  where their faces cross at near-equal depth the test flips pixel to pixel (the speckle on dense /
+  black MIDI). The clip-space depth gets pbIdx(port*16+ch)*5e-6*w added, so the depth buffer orders
+  channels deterministically. The offset is a few hundred D24 levels - under one pixel of motion,
+  invisible, and far below the depth gap to the keyboard / board, so real ordering is untouched.
+  (Measured: even before this, DX11 showed ~12x less speckle than DX9 - DX11's depth buffer is D24
+  vs DX9's D16, so it was already more precise; this reduces it further.)
 * [FIX] Notes WRITE depth again, as in DX9. Culling stays as in DX9 too: both sides of the box are
   drawn (D3DCULL_NONE).
   The port had turned depth writing off, so overlapping notes resolved by draw order instead of by

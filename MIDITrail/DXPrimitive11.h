@@ -74,6 +74,7 @@ public:
 	void SetAdditiveBlend(bool isAdditive) { m_Additive = isAdditive; }  // glow (SRCALPHA/ONE)
 	void SetLineTopology(bool isLines) { m_LineTopology = isLines; }     // LINELIST instead of TRIANGLELIST
 	void SetPointTopology(bool isPoints) { m_PointTopology = isPoints; } // POINTLIST instead of TRIANGLELIST (stars)
+	void SetDepthWrite(bool write) { m_DepthWrite = write; }             // false = test but don't write depth (backdrop grid)
 
 	// Draw. viewProj is the camera's view*proj. drawPrimitiveNum<0 => all.
 	int Draw(ID3D11DeviceContext* pContext, const DirectX::XMMATRIX& viewProj,
@@ -92,6 +93,7 @@ private:
 	bool m_Additive;
 	bool m_LineTopology;
 	bool m_PointTopology;
+	bool m_DepthWrite;   // false = don't write depth (so an invisible/backdrop primitive can't occlude notes)
 
 	// shared pipeline objects (one set per process/device)
 	static ID3D11VertexShader* s_pVS;
@@ -103,6 +105,7 @@ private:
 	static ID3D11BlendState* s_pBlend;
 	static ID3D11BlendState* s_pBlendAdd;   // additive (SRCALPHA/ONE) for glow effects
 	static ID3D11DepthStencilState* s_pDepth;
+	static ID3D11DepthStencilState* s_pDepthNoWrite;   // depth test on, write off
 
 	void operator=(const DXPrimitive11&);
 	DXPrimitive11(const DXPrimitive11&);

@@ -24,6 +24,7 @@ ID3D11RasterizerState*   DXPrimitive11::s_pRasterNoCull = NULL;
 ID3D11BlendState*        DXPrimitive11::s_pBlend = NULL;
 ID3D11BlendState*        DXPrimitive11::s_pBlendAdd = NULL;
 ID3D11DepthStencilState* DXPrimitive11::s_pDepth = NULL;
+ID3D11DepthStencilState* DXPrimitive11::s_pDepthNoWrite = NULL;
 
 static const char* DXP11_SHADER =
 	"cbuffer Constants : register(b0) {\n"
@@ -79,6 +80,7 @@ DXPrimitive11::DXPrimitive11()
 	m_Additive = false;
 	m_LineTopology = false;
 	m_PointTopology = false;
+	m_DepthWrite = true;
 }
 
 DXPrimitive11::~DXPrimitive11()
@@ -196,6 +198,11 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 		dd.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
 		hr = pDevice->CreateDepthStencilState(&dd, &s_pDepth);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+		// backdrop variant: still test depth, but do NOT write it, so a fully transparent
+		// primitive (e.g. the grid at alpha 0) can never occlude the notes drawn after it.
+		dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		hr = pDevice->CreateDepthStencilState(&dd, &s_pDepthNoWrite);
+		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
 EXIT:;
@@ -208,6 +215,7 @@ EXIT:;
 
 void DXPrimitive11::ReleasePipeline()
 {
+	if (s_pDepthNoWrite != NULL){ s_pDepthNoWrite->Release();s_pDepthNoWrite = NULL; }
 	if (s_pDepth != NULL)       { s_pDepth->Release();       s_pDepth = NULL; }
 	if (s_pBlendAdd != NULL)    { s_pBlendAdd->Release();    s_pBlendAdd = NULL; }
 	if (s_pBlend != NULL)       { s_pBlend->Release();       s_pBlend = NULL; }
@@ -340,7 +348,7 @@ int DXPrimitive11::Draw(ID3D11DeviceContext* pContext, const XMMATRIX& viewProj,
 	pContext->PSSetShaderResources(0, 1, &m_pSRV);
 	pContext->RSSetState(s_pRasterNoCull);
 	pContext->OMSetBlendState(m_Additive ? s_pBlendAdd : s_pBlend, blendFactor, 0xFFFFFFFF);
-	pContext->OMSetDepthStencilState(s_pDepth, 0);
+	pContext->OMSetDepthStencilState(m_DepthWrite ? s_pDepth : s_pDepthNoWrite, 0);
 
 	if (m_LineTopology || m_PointTopology) {
 		pContext->DrawIndexed(m_IndexNum, 0, 0);

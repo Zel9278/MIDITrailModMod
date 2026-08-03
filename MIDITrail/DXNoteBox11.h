@@ -55,6 +55,11 @@ public:
 	void SetCurTickTime(unsigned long curTickTime) { m_CurTickTime = curTickTime; }
 	void Reset() { m_CurTickTime = 0; }
 
+	// song time scale (ticks per ms = TimeDivision * BPM / 60000); lets the active-note
+	// white flash / swell decay over a fixed time (DX9's ActiveNoteDuration), not the note's
+	// length. 0 = unknown (stopped / no tempo): the flash falls back to onset-only.
+	void SetSongTickPerMs(double tickPerMs) { m_SongTickPerMs = tickPerMs; }
+
 	// per-(port,ch) pitch bend (not owned); shifts active notes in pitch (Y)
 	void SetPitchBend(MTNotePitchBend* pPitchBend) { m_pPitchBend = pPitchBend; }
 
@@ -106,6 +111,7 @@ private:
 	bool m_Ready;
 	bool m_CollapsePorts;   // merge all ports onto port 0's row (single keyboard)
 	unsigned long m_CurTickTime;
+	double m_SongTickPerMs;   // ticks/ms for the active-note flash decay (0 = unknown)
 
 	// world translation (MTNoteDesign::GetWorldMoveVector)
 	DirectX::XMFLOAT3 m_WorldMove;
