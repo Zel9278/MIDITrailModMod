@@ -434,7 +434,7 @@ int MTKeyboard11::Create(
 		unsigned long extI = m_InfiniteKbd ? m_ExtIdxNum : 0;
 		for (i = 0; i < m_NumKbd; i++) {
 			DXP11_VERTEX* pv = NULL;
-			unsigned long* pi = NULL;
+			DXP11_INDEX* pi = nullptr;
 			result = m_Subs[i].prim.CreateVertexBuffer(pDevice, vn + extV);
 			if (result != 0) goto EXIT;
 			result = m_Subs[i].prim.CreateIndexBuffer(pDevice, in + extI);
@@ -454,11 +454,13 @@ int MTKeyboard11::Create(
 				unsigned long botI = m_ExtBottomIdxNum;   // below-0 index count
 				unsigned long pos = 0;
 				for (unsigned long e = 0; e < botI; e++) pi[pos++] = m_pExtIdx[e] + vn;      // below 0
-				memcpy(pi + pos, pCpuIB, (size_t)in * sizeof(unsigned long)); pos += in;      // main 0-127
+				for (unsigned long mainIndex = 0; mainIndex < in; mainIndex++)
+					pi[pos++] = static_cast<DXP11_INDEX>(pCpuIB[mainIndex]);                    // main 0-127
 				for (unsigned long e = botI; e < extI; e++) pi[pos++] = m_pExtIdx[e] + vn;    // note 128+
 			}
 			else {
-				memcpy(pi, pCpuIB, (size_t)in * sizeof(unsigned long));
+				for (unsigned long mainIndex = 0; mainIndex < in; mainIndex++)
+					pi[mainIndex] = static_cast<DXP11_INDEX>(pCpuIB[mainIndex]);
 			}
 			m_Subs[i].prim.UnlockIndex(pContext);
 			m_Subs[i].prim.SetMaterialAmbient(0.55f, 0.55f, 0.55f);

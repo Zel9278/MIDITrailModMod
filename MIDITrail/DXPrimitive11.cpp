@@ -6,13 +6,71 @@
 //
 //******************************************************************************
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include <cstdio>
+#include <cstring>
+#define YN_SET_ERR(message, info1, info2) \
+	(std::fprintf(stderr, "%s (0x%llx, 0x%llx)\n", message, \
+		static_cast<unsigned long long>(info1), static_cast<unsigned long long>(info2)), -1)
+#else
 #include "stdafx.h"
 #include "YNBaseLib.h"
+#endif
 #include "DXPrimitive11.h"
+#ifndef MIDITRAIL_LINUX_NATIVE
 #include <d3dcompiler.h>
+#else
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#include <d3dcompiler.h>
+#undef WINAPI
+#define WINAPI
+#undef NULL
+#define NULL nullptr
+#endif
 
+#ifndef MIDITRAIL_LINUX_NATIVE
 using namespace YNBaseLib;
+#endif
 using namespace DirectX;
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+static HRESULT MTCompileShader(const void* data, SIZE_T data_size, const char* filename,
+	const D3D_SHADER_MACRO* defines, ID3DInclude* include, const char* entrypoint,
+	const char* target, UINT flags, UINT effect_flags, ID3DBlob** shader, ID3DBlob** errors)
+{
+	return D3DCompile(data, data_size, filename != NULL ? filename : "MIDITrailMod.hlsl",
+		defines, include, entrypoint, target, flags, effect_flags, shader, errors);
+}
+
+using MTBlobGetBufferPointer = void* (__attribute__((ms_abi)) *)(ID3DBlob*);
+using MTBlobGetBufferSize = SIZE_T (__attribute__((ms_abi)) *)(ID3DBlob*);
+using MTBlobRelease = ULONG (__attribute__((ms_abi)) *)(ID3DBlob*);
+
+static void* MTGetBlobBufferPointer(ID3DBlob* blob)
+{
+	if (blob == NULL) return NULL;
+	void** vtable = *reinterpret_cast<void***>(blob);
+	return reinterpret_cast<MTBlobGetBufferPointer>(vtable[3])(blob);
+}
+
+static SIZE_T MTGetBlobBufferSize(ID3DBlob* blob)
+{
+	if (blob == NULL) return 0;
+	void** vtable = *reinterpret_cast<void***>(blob);
+	return reinterpret_cast<MTBlobGetBufferSize>(vtable[4])(blob);
+}
+
+static ULONG MTReleaseBlob(ID3DBlob* blob)
+{
+	if (blob == NULL) return 0;
+	void** vtable = *reinterpret_cast<void***>(blob);
+	return reinterpret_cast<MTBlobRelease>(vtable[2])(blob);
+}
+#define D3DCompile MTCompileShader
+#endif
 
 // static pipeline objects
 ID3D11VertexShader*      DXPrimitive11::s_pVS = NULL;
@@ -112,14 +170,16 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 	if (pDevice == NULL) return YN_SET_ERR("Program error.", 0, 0);
 
 	UINT flags = 0;
-	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), NULL, NULL, NULL, "VSMain", "vs_4_0", flags, 0, &pVSBlob, &pErr);
+	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), "DXPrimitive11.hlsl", NULL, NULL, "VSMain", "vs_4_0", flags, 0, &pVSBlob, &pErr);
 	if (FAILED(hr) || (pVSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
-	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", flags, 0, &pPSBlob, &pErr);
+	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), "DXPrimitive11.hlsl", NULL, NULL, "PSMain", "ps_4_0", flags, 0, &pPSBlob, &pErr);
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &s_pVS);
+	hr = pDevice->CreateVertexShader(
+		MTGetBlobBufferPointer(pVSBlob), MTGetBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &s_pPS);
+	hr = pDevice->CreatePixelShader(
+		MTGetBlobBufferPointer(pPSBlob), MTGetBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -129,7 +189,8 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,  0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 		};
-		hr = pDevice->CreateInputLayout(il, 4, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 4,
+			MTGetBlobBufferPointer(pVSBlob), MTGetBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -206,9 +267,15 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 	}
 
 EXIT:;
-	if (pVSBlob != NULL) pVSBlob->Release();
-	if (pPSBlob != NULL) pPSBlob->Release();
-	if (pErr != NULL) pErr->Release();
+#ifdef MIDITRAIL_LINUX_NATIVE
+	if (pVSBlob != NULL) MTReleaseBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseBlob(pErr);
+#else
+	if (pVSBlob != NULL) MTReleaseBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseBlob(pErr);
+#endif
 	if (result != 0) ReleasePipeline();
 	return result;
 }
@@ -254,7 +321,7 @@ int DXPrimitive11::CreateIndexBuffer(ID3D11Device* pDevice, unsigned long indexN
 	if (m_pIndexBuffer != NULL) { m_pIndexBuffer->Release(); m_pIndexBuffer = NULL; }
 	if (indexNum == 0) { m_IndexNum = 0; return 0; }
 	ZeroMemory(&bd, sizeof(bd));
-	bd.ByteWidth = sizeof(unsigned long) * indexNum;
+	bd.ByteWidth = sizeof(DXP11_INDEX) * indexNum;
 	bd.Usage = D3D11_USAGE_DYNAMIC;
 	bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -274,12 +341,12 @@ int DXPrimitive11::LockVertex(ID3D11DeviceContext* pContext, DXP11_VERTEX** ppVe
 }
 void DXPrimitive11::UnlockVertex(ID3D11DeviceContext* pContext) { pContext->Unmap(m_pVertexBuffer, 0); }
 
-int DXPrimitive11::LockIndex(ID3D11DeviceContext* pContext, unsigned long** ppIndex)
+int DXPrimitive11::LockIndex(ID3D11DeviceContext* pContext, DXP11_INDEX** ppIndex)
 {
 	D3D11_MAPPED_SUBRESOURCE ms;
 	HRESULT hr = pContext->Map(m_pIndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms);
 	if (FAILED(hr)) return YN_SET_ERR("DirectX API error.", hr, 0);
-	*ppIndex = (unsigned long*)ms.pData;
+	*ppIndex = (DXP11_INDEX*)ms.pData;
 	return 0;
 }
 void DXPrimitive11::UnlockIndex(ID3D11DeviceContext* pContext) { pContext->Unmap(m_pIndexBuffer, 0); }

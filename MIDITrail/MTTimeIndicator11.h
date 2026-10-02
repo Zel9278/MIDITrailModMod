@@ -29,6 +29,7 @@ public:
 	void Release();
 
 	void SetCurTickTime(unsigned long curTickTime) { m_CurTickTime = curTickTime; }
+	float GetPlayPosX() { return m_NoteDesign.GetPlayPosX(m_CurTickTime); }
 	void SetEnable(bool isEnable) { m_Enable = isEnable; }
 	void Reset() { m_CurTickTime = 0; }
 

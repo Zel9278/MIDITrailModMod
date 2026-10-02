@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "MTGridBox11.h"
+#include <cstdint>
 #include <stdlib.h>
 
 using namespace YNBaseLib;
@@ -18,8 +19,9 @@ using namespace DirectX;
 struct MTGB11_SRCVTX {
 	float p[3];
 	float n[3];
-	unsigned long c;
+	std::uint32_t c;
 };
+static_assert(sizeof(MTGB11_SRCVTX) == 28, "Grid source vertex layout must match MTGRIDBOX_VERTEX");
 
 
 MTGridBox11::MTGridBox11()
@@ -54,7 +56,7 @@ int MTGridBox11::Create(
 	void* pCpuVB = NULL;
 	unsigned long* pCpuIB = NULL;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 	MTGB11_SRCVTX* src = NULL;
 	D3DXVECTOR3 mv;
 
@@ -98,7 +100,7 @@ int MTGridBox11::Create(
 
 	result = m_Prim.LockIndex(pContext, &pi);
 	if (result != 0) goto EXIT;
-	memcpy(pi, pCpuIB, (size_t)in * sizeof(unsigned long));
+	for (i = 0; i < in; i++) pi[i] = static_cast<DXP11_INDEX>(pCpuIB[i]);
 	m_Prim.UnlockIndex(pContext);
 
 	m_Prim.SetLineTopology(true);

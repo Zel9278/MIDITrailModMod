@@ -134,7 +134,7 @@ int MTNoteBoxLive11::Create(
 
 	// static index buffer: one box pattern per slot, offset by slot*24
 	{
-		unsigned long* pi = NULL;
+		DXP11_INDEX* pi = nullptr;
 		result = m_Prim.CreateIndexBuffer(pDevice, 36 * MTNOTEBOXLIVE11_MAX_NOTES);
 		if (result != 0) goto EXIT;
 		result = m_Prim.LockIndex(pContext, &pi);

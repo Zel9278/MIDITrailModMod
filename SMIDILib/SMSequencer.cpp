@@ -14,7 +14,7 @@
 // 他スレッドへの通知はPostMessage等で実現する。
 // _TimerCallBack()→_OnTimer()→・・・
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "SMSequencer.h"
 #include "SMEventMIDI.h"

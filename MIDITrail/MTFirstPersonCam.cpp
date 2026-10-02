@@ -863,6 +863,10 @@ int MTFirstPersonCam::_ClipCursor(
 		bool isClip
 	)
 {
+#ifdef MIDITRAIL_LINUX_NATIVE
+	(void)isClip;
+	return 0;
+#else
 	int result = 0;
 	BOOL bresult = FALSE;
 	RECT wrect;
@@ -905,6 +909,7 @@ int MTFirstPersonCam::_ClipCursor(
 
 EXIT:;
 	return result;
+#endif
 }
 
 //******************************************************************************

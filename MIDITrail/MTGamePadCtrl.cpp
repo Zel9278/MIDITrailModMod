@@ -11,6 +11,7 @@
 #include "StdAfx.h"
 #include "YNBaseLib.h"
 #include "MTGamePadCtrl.h"
+#include <cmath>
 
 using namespace YNBaseLib;
 

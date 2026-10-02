@@ -9,7 +9,18 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "DXNoteRain11.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#endif
 #include <d3dcompiler.h>
+#ifdef MIDITRAIL_LINUX_NATIVE
+#undef WINAPI
+#define WINAPI
+#endif
+#include "Linux/MTLinuxD3DBlob.h"
 
 using namespace YNBaseLib;
 using namespace DirectX;
@@ -30,6 +41,7 @@ ID3D11DepthStencilState* DXNoteRain11::s_pDepth = NULL;
 struct DXNR11_CONSTANTS {
 	XMFLOAT4X4 wvp;
 	XMFLOAT4   active;     // x = now-line Y (GetPlayPosX(curTick)); yzw unused
+	XMFLOAT4   lighting;   // xyz = normalized light direction; w = lighting enabled
 	XMFLOAT4   pb[64];     // per-(port&0xF,ch) pitch-bend X shift, indexed by color.a
 	XMFLOAT4   baseY[64];  // per-(port&0xF,ch) keyboard now-line Y offset
 };
@@ -44,6 +56,7 @@ static const char* DXNR11_SHADER =
 	"cbuffer Constants : register(b0) {\n"
 	"  row_major float4x4 g_WVP;\n"
 	"  float4 g_Active;\n"
+	"  float4 g_Lighting;\n"
 	"  float4 g_PB[64];\n"
 	"  float4 g_BaseY[64];\n"
 	"};\n"
@@ -64,7 +77,13 @@ static const char* DXNR11_SHADER =
 	"  float y = i.box.y + (i.box.z - i.box.y) * i.corner.y;\n"
 	"  float3 wp = float3(x, y, i.box.w);\n"
 	"  o.pos = mul(float4(wp, 1.0), g_WVP);\n"
-	"  o.col = float4(i.color.rgb, lerp(1.0, 0.5, i.corner.y));\n"
+	// DX9 MTNoteRain uses normal (0,+1,0), light direction (1,-2,0.5),
+	// diffuse white and ambient 0.5 * material ambient 0.5. D3D's directional
+	// light vector points along the rays, so the diffuse term uses dot(N,-L).
+	"  float diffuse = saturate(dot(float3(0,1,0), -normalize(g_Lighting.xyz)));\n"
+	"  float3 lit = saturate(i.color.rgb * diffuse + 0.25);\n"
+	"  float3 rgb = lerp(i.color.rgb, lit, g_Lighting.w);\n"
+	"  o.col = float4(rgb, lerp(1.0, 0.5, i.corner.y));\n"
 	"  return o;\n"
 	"}\n"
 	"float4 PSMain(VSOUT i) : SV_TARGET { return i.col; }\n";
@@ -119,9 +138,9 @@ int DXNoteRain11::InitPipeline(ID3D11Device* pDevice)
 	hr = D3DCompile(DXNR11_SHADER, strlen(DXNR11_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPSBlob, &pErr);
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &s_pVS);
+	hr = pDevice->CreateVertexShader(MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &s_pPS);
+	hr = pDevice->CreatePixelShader(MTGetD3DBlobBufferPointer(pPSBlob), MTGetD3DBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -130,9 +149,9 @@ int DXNoteRain11::InitPipeline(ID3D11Device* pDevice)
 			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,       0,  0, D3D11_INPUT_PER_VERTEX_DATA,   0 },
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,  0, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT,          1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
-			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,     1, 20, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
+			{ "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT,  1, 20, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 		};
-		hr = pDevice->CreateInputLayout(il, 4, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 4, MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -217,9 +236,9 @@ int DXNoteRain11::InitPipeline(ID3D11Device* pDevice)
 	}
 
 EXIT:;
-	if (pVSBlob != NULL) pVSBlob->Release();
-	if (pPSBlob != NULL) pPSBlob->Release();
-	if (pErr != NULL) pErr->Release();
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 	if (result != 0) ReleasePipeline();
 	return result;
 }
@@ -347,7 +366,10 @@ int DXNoteRain11::_CreateInstanceBuffer(ID3D11Device* pDevice)
 			D3DCOLOR col = (m_pNoteTrackNo != NULL)
 				? (D3DCOLOR)m_NoteDesign.GetTrackChannelColor(m_pNoteTrackNo[i], note.chNo)
 				: (D3DCOLOR)m_NoteDesign.GetNoteBoxColor(note.portNo, note.chNo, note.noteNo);
-			pInst[i].color = (col & 0x00FFFFFF) | ((unsigned long)idx << 24);
+			pInst[i].color[0] = static_cast<float>((col >> 16) & 0xFF) / 255.0f;
+			pInst[i].color[1] = static_cast<float>((col >> 8) & 0xFF) / 255.0f;
+			pInst[i].color[2] = static_cast<float>(col & 0xFF) / 255.0f;
+			pInst[i].color[3] = static_cast<float>(idx) / 255.0f;
 			m_BaseY[idx] = yOffset;
 		}
 	}
@@ -460,6 +482,7 @@ int DXNoteRain11::DrawDX11(
 		// M4.21 pitch bend: now-line Y + per-(port&0xF,ch) X shift and Y offset.
 		// A note is sounding when its time span contains (g_Active.x + g_BaseY[idx]).
 		c.active = XMFLOAT4(m_NoteDesign.GetPlayPosX(m_CurTickTime), m_BendAllNotes ? 1.0f : 0.0f, 0, 0);
+		c.lighting = XMFLOAT4(1.0f, -2.0f, 0.5f, 1.0f);
 		ZeroMemory(c.pb, sizeof(c.pb));
 		ZeroMemory(c.baseY, sizeof(c.baseY));
 		{

@@ -13,14 +13,26 @@
 
 #pragma once
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include "Linux/MTLinuxCompat.h"
+#include <sys/types.h>
+#include "SMSeqData.h"
+#include "SMTrack.h"
+#include "SMEvent.h"
+#include "SMEventMIDI.h"
+#include "SMEventMeta.h"
+#else
 #include <windows.h>
 #include <tchar.h>
+#endif
 #include <vector>
 #include <queue>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#ifndef MIDITRAIL_LINUX_NATIVE
 #include "SMIDILib.h"
+#endif
 #include "MTNotePitchBend.h"
 
 using namespace SMIDILib;
@@ -42,6 +54,7 @@ enum MTVideoCodec {
 	// ced 20260629: AMD GPU hardware encoder（末尾に追加。enum 値=コンボ index を維持）
 	MTVC_H264_AMF,         // GPU (AMD)      -> .mp4
 	MTVC_HEVC_AMF,         // GPU (AMD)      -> .mp4
+	                       // Linux: the two AMF slots encode through VAAPI instead.
 };
 
 struct MTVideoExportParams {
@@ -165,7 +178,11 @@ public:
 	void SubmitBuffer(int slot);
 
 	int Close();   // drain the queue, close stdin, wait for ffmpeg (returns its exit code)
+#ifdef MIDITRAIL_LINUX_NATIVE
+	bool IsOpen() const { return (m_Pid > 0); }
+#else
 	bool IsOpen() const { return (m_hProc != NULL); }
+#endif
 
 	// copy the tail of ffmpeg's captured stderr (the actual failure reason) into
 	// pBuf. Valid after Close(). Returns false if there is nothing to report.
@@ -175,8 +192,13 @@ private:
 	void _WriterLoop();
 	bool _WriteAll(const unsigned char* p, size_t bytes);
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+	pid_t  m_Pid;
+	int    m_StdinFd;
+#else
 	HANDLE m_hProc;
 	HANDLE m_hStdinWr;
+#endif
 	size_t m_FrameBytes;
 	TCHAR  m_LogPath[MAX_PATH];   // ffmpeg stderr capture file ('\0' if none)
 

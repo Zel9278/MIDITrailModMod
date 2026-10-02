@@ -8,13 +8,62 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "SMFileReader.h"
 #include "SMSimpleList.h"
 #include "SMCommon.h"
 #include "tchar.h"
 #include "shlwapi.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include <fcntl.h>
+#include <string>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+//Linux: the parser reads through a minimal in-memory mmio replacement backed by
+//mmap (same zero-copy access as the Windows FOURCC_MEM path).
+namespace {
+struct SMMemFile {
+	const char* pData;
+	long size;
+	long pos;
+};
+
+long mmioRead(HMMIO hFile, HPSTR pBuf, long size)
+{
+	SMMemFile* pFile = (SMMemFile*)hFile;
+	if ((pFile == NULL) || (size < 0)) return -1;
+	long remain = pFile->size - pFile->pos;
+	long count = (size < remain) ? size : remain;
+	if (count > 0) memcpy(pBuf, pFile->pData + pFile->pos, (size_t)count);
+	pFile->pos += count;
+	return count;
+}
+
+long mmioSeek(HMMIO hFile, long offset, int origin)
+{
+	SMMemFile* pFile = (SMMemFile*)hFile;
+	if (pFile == NULL) return -1;
+	long base = (origin == SEEK_SET) ? 0 : (origin == SEEK_CUR) ? pFile->pos : pFile->size;
+	long pos = base + offset;
+	if ((pos < 0) || (pos > pFile->size)) return -1;
+	pFile->pos = pos;
+	return pos;
+}
+
+void mmioClose(HMMIO hFile, unsigned int)
+{
+	delete (SMMemFile*)hFile;
+}
+
+DWORD GetLastError()
+{
+	return (DWORD)errno;
+}
+}
+#endif
 
 using namespace YNBaseLib;
 
@@ -41,6 +90,25 @@ SMFileReader::~SMFileReader(void)
 //******************************************************************************
 // ログ出力パス設定
 //******************************************************************************
+#ifdef MIDITRAIL_LINUX_NATIVE
+int SMFileReader::SetLogPath(
+		const char* pLogPath
+	)
+{
+	m_LogPath[0] = L'\0';
+	m_LogPathA[0] = '\0';
+	m_IsLogOut = false;
+	if ((pLogPath != NULL) && (pLogPath[0] != '\0')) {
+		strncpy(m_LogPathA, pLogPath, MAX_PATH - 1);
+		m_LogPathA[MAX_PATH - 1] = '\0';
+		m_LogPath[0] = L'x';   //marks "log enabled" for the shared wcslen() checks
+		m_LogPath[1] = L'\0';
+		m_IsLogOut = true;
+	}
+	return 0;
+}
+#endif
+
 int SMFileReader::SetLogPath(
 		const WCHAR* pLogPath
 	)
@@ -54,7 +122,13 @@ int SMFileReader::SetLogPath(
 		m_LogPath[0] = L'\0';
 	}
 	else {
+#ifdef MIDITRAIL_LINUX_NATIVE
+		wcsncpy(m_LogPath, pLogPath, MAX_PATH - 1);
+		m_LogPath[MAX_PATH - 1] = L'\0';
+		wcstombs(m_LogPathA, m_LogPath, MAX_PATH);
+#else
 		eresult = wcscpy_s(m_LogPath, MAX_PATH, pLogPath);
+#endif
 		if (eresult != 0) {
 			result = YN_SET_ERR("Program error.", 0, 0);
 			goto EXIT;
@@ -92,14 +166,21 @@ int SMFileReader::Load(
 		SMSeqData* pSeqData
 	)
 {
-	wchar_t pathW[MAX_PATH];
 	if (pSMFPath == NULL) {
 		return YN_SET_ERR("Program error.", 0, 0);
 	}
+#ifdef MIDITRAIL_LINUX_NATIVE
+	//Linux: paths are UTF-8 byte strings; open them as-is
+	const char* pName = strrchr(pSMFPath, '/');
+	return _LoadImpl(pSMFPath, (pName != NULL) ? (pName + 1) : pSMFPath, pSeqData);
+#else
+	wchar_t pathW[MAX_PATH];
 	MultiByteToWideChar(CP_ACP, 0, pSMFPath, -1, pathW, MAX_PATH);
 	return _LoadImpl(pathW, PathFindFileName(pSMFPath), pSeqData);
+#endif
 }
 
+#ifndef MIDITRAIL_LINUX_NATIVE
 //******************************************************************************
 // LoadW (wide path) - supports file names with Unicode characters
 //******************************************************************************
@@ -118,20 +199,35 @@ int SMFileReader::LoadW(
 	WideCharToMultiByte(CP_ACP, 0, pNameW, -1, nameA, MAX_PATH, NULL, NULL);
 	return _LoadImpl(pSMFPathW, nameA, pSeqData);
 }
+#endif
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+int SMFileReader::_LoadImpl(
+		const char* pPathW,
+		const TCHAR* pNameForLog,
+		SMSeqData* pSeqData
+	)
+#else
 int SMFileReader::_LoadImpl(
 		const wchar_t* pPathW,
 		const TCHAR* pNameForLog,
 		SMSeqData* pSeqData
 	)
+#endif
 {
 	int result = 0;
 	unsigned long i = 0;
 	HMMIO hFile = NULL;
+#ifdef MIDITRAIL_LINUX_NATIVE
+	int osFile = -1;
+	void* pMapView = NULL;
+	size_t mapSize = 0;
+#else
 	HANDLE hOsFile = INVALID_HANDLE_VALUE;
 	HANDLE hMapFile = NULL;
 	void* pMapView = NULL;
 	MMIOINFO mmioInfo;
+#endif
 	SMFChunkTypeSection chunkTypeSection;
 	SMFChunkDataSection chunkDataSection;
 	SMFChunkTypeSection chunkTypeSectionOfTrack;
@@ -149,6 +245,31 @@ int SMFileReader::_LoadImpl(
 	if (result != 0 ) goto EXIT;
 
 	//ファイルを開く
+#ifdef MIDITRAIL_LINUX_NATIVE
+	osFile = open(pPathW, O_RDONLY | O_CLOEXEC);
+	if (osFile >= 0) {
+		struct stat st;
+		if ((fstat(osFile, &st) == 0) && (st.st_size > 0) && (st.st_size <= 0x7FFFFFFF)) {
+			mapSize = (size_t)st.st_size;
+			pMapView = mmap(NULL, mapSize, PROT_READ, MAP_PRIVATE, osFile, 0);
+			if (pMapView == MAP_FAILED) {
+				pMapView = NULL;
+			}
+			else {
+				madvise(pMapView, mapSize, MADV_SEQUENTIAL);
+				SMMemFile* pMemFile = new SMMemFile();
+				pMemFile->pData = (const char*)pMapView;
+				pMemFile->size = (long)mapSize;
+				pMemFile->pos = 0;
+				hFile = (HMMIO)pMemFile;
+			}
+		}
+	}
+	if (hFile == NULL) {
+		result = YN_SET_ERR("File open error.", errno, 0);
+		goto EXIT;
+	}
+#else
 	//Memory-map the file and read through mmio(FOURCC_MEM): the SMF bytes are
 	//accessed in RAM (zero-copy), eliminating the per-read ReadFile syscalls that
 	//made Black MIDI loading slow. Parsing logic below is unchanged.
@@ -185,6 +306,7 @@ int SMFileReader::_LoadImpl(
 		result = YN_SET_ERR("File open error.", GetLastError(), 0);
 		goto EXIT;
 	}
+#endif
 
 	//RIFFヘッダ読み飛ばし
 	result = _SkipRIFFHeader(hFile);
@@ -242,13 +364,31 @@ int SMFileReader::_LoadImpl(
 	if (result != 0 ) goto EXIT;
 
 	//ファイル名登録
+#ifdef MIDITRAIL_LINUX_NATIVE
+	{
+		std::string nameA(pNameForLog);
+		std::wstring nameW(nameA.begin(), nameA.end());
+		pSeqData->SetFileName(nameW.c_str());
+	}
+#else
 	pSeqData->SetFileName(PathFindFileNameW(pPathW));
+#endif
 
 EXIT:;
 	if (hFile != NULL) {
 		mmioClose(hFile, 0);
 		hFile = NULL;
 	}
+#ifdef MIDITRAIL_LINUX_NATIVE
+	if (pMapView != NULL) {
+		munmap(pMapView, mapSize);
+		pMapView = NULL;
+	}
+	if (osFile >= 0) {
+		close(osFile);
+		osFile = -1;
+	}
+#else
 	if (pMapView != NULL) {
 		UnmapViewOfFile(pMapView);
 		pMapView = NULL;
@@ -261,6 +401,7 @@ EXIT:;
 		CloseHandle(hOsFile);
 		hOsFile = INVALID_HANDLE_VALUE;
 	}
+#endif
 	_CloseLogFile();
 	return result;
 }
@@ -341,7 +482,7 @@ int SMFileReader::_ReadChunkHeader(
 	}
 
 	//エンディアン変換
-	_ReverseEndian(&(pChunkTypeSection->chunkSize), sizeof(unsigned long));
+	_ReverseEndian(&(pChunkTypeSection->chunkSize), sizeof(pChunkTypeSection->chunkSize));
 
 	//整合性チェック
 	if (memcmp(pChunkTypeSection->chunkType, "MThd", 4) != 0) {
@@ -402,7 +543,7 @@ int SMFileReader::_ReadTrackHeader(
 	}
 
 	//エンディアン変換
-	_ReverseEndian(&(pChunkTypeSection->chunkSize), sizeof(unsigned long));
+	_ReverseEndian(&(pChunkTypeSection->chunkSize), sizeof(pChunkTypeSection->chunkSize));
 
 	//整合性チェック
 	if (memcmp(pChunkTypeSection->chunkType, "MTrk", 4) != 0) {
@@ -892,7 +1033,12 @@ int SMFileReader::_OpenLogFile()
 
 	if (wcslen(m_LogPath) == 0) goto EXIT;
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+	m_pLogFile = fopen(m_LogPathA, "w");
+	eresult = (m_pLogFile == NULL) ? errno : 0;
+#else
 	eresult = _wfopen_s(&m_pLogFile, m_LogPath, L"w");
+#endif
 	if (eresult != 0) {
 		result = YN_SET_ERR("Log file open error.", 0, 0);
 		goto EXIT;

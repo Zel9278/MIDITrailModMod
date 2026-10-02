@@ -9,7 +9,18 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "DXNoteBox11.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#endif
 #include <d3dcompiler.h>
+#ifdef MIDITRAIL_LINUX_NATIVE
+#undef WINAPI
+#define WINAPI
+#endif
+#include "Linux/MTLinuxD3DBlob.h"
 
 using namespace YNBaseLib;
 using namespace DirectX;
@@ -152,7 +163,7 @@ DXNoteBox11::DXNoteBox11()
 	m_LightDir = XMFLOAT3(1.0f, -1.0f, 2.0f);
 	m_LightDiffuse = 1.2f;
 	m_LightAmbient = 0.2f;   // DX9 light0 ambient (light1 ambient is 0); applied to the note colour
-	m_pInstanceVB = NULL;
+	m_InstanceVBs.clear();
 	m_AllNoteNum = 0;
 	m_pNoteStartTime = NULL;
 	m_pNoteMaxEndTime = NULL;
@@ -166,7 +177,10 @@ DXNoteBox11::~DXNoteBox11()
 
 void DXNoteBox11::Release()
 {
-	if (m_pInstanceVB != NULL) { m_pInstanceVB->Release(); m_pInstanceVB = NULL; }
+	for (ID3D11Buffer* buffer : m_InstanceVBs) {
+		if (buffer != NULL) buffer->Release();
+	}
+	m_InstanceVBs.clear();
 	if (m_pNoteStartTime != NULL) { delete [] m_pNoteStartTime; m_pNoteStartTime = NULL; }
 	if (m_pNoteMaxEndTime != NULL) { delete [] m_pNoteMaxEndTime; m_pNoteMaxEndTime = NULL; }
 	if (m_pNoteTrackNo != NULL) { delete [] m_pNoteTrackNo; m_pNoteTrackNo = NULL; }
@@ -194,9 +208,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 	hr = D3DCompile(DXNB11_SHADER, strlen(DXNB11_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPSBlob, &pErr);
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &s_pVS);
+	hr = pDevice->CreateVertexShader(MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &s_pPS);
+	hr = pDevice->CreatePixelShader(MTGetD3DBlobBufferPointer(pPSBlob), MTGetD3DBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -210,7 +224,7 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 			{ "TEXCOORD", 2, DXGI_FORMAT_R32_FLOAT,       1, 28, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 3, DXGI_FORMAT_R32_FLOAT,       1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1 },  // real alpha
 		};
-		hr = pDevice->CreateInputLayout(il, 7, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 7, MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -341,9 +355,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 	}
 
 EXIT:;
-	if (pVSBlob != NULL) pVSBlob->Release();
-	if (pPSBlob != NULL) pPSBlob->Release();
-	if (pErr != NULL) pErr->Release();
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 	if (result != 0) ReleasePipeline();
 	return result;
 }
@@ -500,16 +514,26 @@ int DXNoteBox11::_CreateInstanceBuffer(
 	}
 
 	{
-		D3D11_BUFFER_DESC bd;
-		D3D11_SUBRESOURCE_DATA sr;
-		ZeroMemory(&bd, sizeof(bd));
-		bd.ByteWidth = sizeof(DXNB11_INSTANCE) * m_AllNoteNum;
-		bd.Usage = D3D11_USAGE_IMMUTABLE;
-		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		ZeroMemory(&sr, sizeof(sr));
-		sr.pSysMem = pInst;
-		hr = pDevice->CreateBuffer(&bd, &sr, &m_pInstanceVB);
-		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, m_AllNoteNum); goto EXIT; }
+		const unsigned long chunkSize = 1UL << 20;
+		for (unsigned long first = 0; first < m_AllNoteNum; first += chunkSize) {
+			const unsigned long count = std::min(chunkSize, m_AllNoteNum - first);
+			D3D11_BUFFER_DESC bd;
+			D3D11_SUBRESOURCE_DATA sr;
+			ZeroMemory(&bd, sizeof(bd));
+			bd.ByteWidth = sizeof(DXNB11_INSTANCE) * count;
+			bd.Usage = D3D11_USAGE_IMMUTABLE;
+			bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+			ZeroMemory(&sr, sizeof(sr));
+			sr.pSysMem = pInst + first;
+			ID3D11Buffer* buffer = NULL;
+			hr = pDevice->CreateBuffer(&bd, &sr, &buffer);
+			if (FAILED(hr)) {
+				if (buffer != NULL) buffer->Release();
+				result = YN_SET_ERR("DirectX API error.", hr, count);
+				goto EXIT;
+			}
+			m_InstanceVBs.push_back(buffer);
+		}
 	}
 
 EXIT:;
@@ -632,7 +656,7 @@ int DXNoteBox11::DrawDX11(
 	float blendFactor[4] = { 0, 0, 0, 0 };
 
 	if (!m_Ready) return 0;
-	if (m_pInstanceVB == NULL) return 0;
+	if (m_InstanceVBs.empty()) return 0;
 	if (s_pVS == NULL) return YN_SET_ERR("Program error.", 0, 0);
 
 	_GetVisibleNoteRange(&loNote, &hiNote);
@@ -683,11 +707,10 @@ int DXNoteBox11::DrawDX11(
 	}
 
 	vbs[0] = s_pTemplateVB;  strides[0] = sizeof(float) * 6;   // corner + face normal
-	vbs[1] = m_pInstanceVB;  strides[1] = sizeof(DXNB11_INSTANCE);
+	vbs[1] = NULL;           strides[1] = sizeof(DXNB11_INSTANCE);
 
 	pContext->IASetInputLayout(s_pLayout);
 	pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
 	pContext->IASetIndexBuffer(s_pBoxIB, DXGI_FORMAT_R16_UINT, 0);
 	pContext->VSSetShader(s_pVS, NULL, 0);
 	pContext->VSSetConstantBuffers(0, 1, &s_pConstBuf);
@@ -717,8 +740,17 @@ int DXNoteBox11::DrawDX11(
 		if (FAILED(hr)) return YN_SET_ERR("DirectX API error.", hr, 0);
 		memcpy(ms.pData, &c, sizeof(c));
 		pContext->Unmap(s_pConstBuf, 0);
-		// one instance per note in the pass range, offset into the instance buffer
-		pContext->DrawIndexedInstanced(36, hi - lo, 0, 0, lo);
+		const unsigned long chunkSize = 1UL << 20;
+		for (unsigned long chunkFirst = (lo / chunkSize) * chunkSize;
+			 chunkFirst < hi; chunkFirst += chunkSize) {
+			const unsigned long drawLo = std::max(lo, chunkFirst);
+			const unsigned long drawHi = std::min(hi, chunkFirst + chunkSize);
+			if (drawHi <= drawLo) continue;
+			vbs[1] = m_InstanceVBs[chunkFirst / chunkSize];
+			offsets[1] = static_cast<UINT>((drawLo - chunkFirst) * sizeof(DXNB11_INSTANCE));
+			pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
+			pContext->DrawIndexedInstanced(36, drawHi - drawLo, 0, 0, 0);
+		}
 	}
 	return 0;
 }

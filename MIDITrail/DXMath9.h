@@ -19,6 +19,13 @@
 #include <d3d9.h>   // D3DMATRIX, D3DVECTOR, D3DCOLOR, D3DCOLORVALUE (Windows SDK)
 #include <math.h>
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef NULL
+#undef NULL
+#endif
+#define NULL nullptr
+#endif
+
 #ifndef D3DX_PI
 #define D3DX_PI 3.14159265358979323846
 #endif

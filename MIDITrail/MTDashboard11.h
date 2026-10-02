@@ -53,7 +53,10 @@ public:
 	// Components are 0..1 floats (as parsed by DXColorUtil::MakeColorFromHexRGBA).
 	void SetTextColor(float r, float g, float b, float a);
 
-	int DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW, unsigned int screenH);
+	// pixelScale: size multiplier for the text/margins (video export renders at a
+	// supersampled resolution that ffmpeg scales down; pass that factor)
+	int DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW, unsigned int screenH,
+			float pixelScale = 1.0f);
 
 	bool IsReady() { return m_Ready; }
 

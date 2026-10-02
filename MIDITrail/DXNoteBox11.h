@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <vector>
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include "SMIDILib.h"
@@ -89,10 +91,11 @@ private:
 	struct DXNB11_INSTANCE {
 		float vmin[3];
 		float vmax[3];
-		unsigned long color;   // D3DCOLOR 0xAARRGGBB (RGB used; A byte = pitch-bend index)
+		std::uint32_t color;   // D3DCOLOR 0xAARRGGBB (RGB used; A byte = pitch-bend index)
 		float hidden;
 		float alpha;           // real note opacity 0..1 (from the colour's A byte) - ced 20260627
 	};
+	static_assert(sizeof(DXNB11_INSTANCE) == 36, "DXNB11 instance layout must match the D3D11 input layout");
 
 	MTNoteDesign m_NoteDesign;
 	SMNoteList m_NoteList;
@@ -117,7 +120,7 @@ private:
 	DirectX::XMFLOAT3 m_WorldMove;
 
 	// instance buffer + culling arrays
-	ID3D11Buffer* m_pInstanceVB;
+	std::vector<ID3D11Buffer*> m_InstanceVBs;
 	unsigned long m_AllNoteNum;
 	unsigned long* m_pNoteStartTime;
 	unsigned long* m_pNoteMaxEndTime;

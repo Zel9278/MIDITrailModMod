@@ -45,7 +45,7 @@ int MTStars11::Create(
 {
 	int result = 0;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 
 	Release();
 

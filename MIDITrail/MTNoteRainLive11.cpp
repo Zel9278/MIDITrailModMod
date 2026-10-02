@@ -87,7 +87,7 @@ int MTNoteRainLive11::Create(
 	result = m_Prim.CreateVertexBuffer(pDevice, m_VertCapacity);
 	if (result != 0) goto EXIT;
 	{
-		unsigned long* pi = NULL;
+		DXP11_INDEX* pi = nullptr;
 		result = m_Prim.CreateIndexBuffer(pDevice, 6 * MTNOTERAINLIVE11_MAX_NOTES);
 		if (result != 0) goto EXIT;
 		result = m_Prim.LockIndex(pContext, &pi);

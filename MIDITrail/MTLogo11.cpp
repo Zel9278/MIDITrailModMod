@@ -78,7 +78,7 @@ void MTLogo11::Release()
 int MTLogo11::Create(ID3D11Device* pDevice, ID3D11DeviceContext* pContext)
 {
 	int result = 0;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 
 	Release();
 	m_pDevice = pDevice;

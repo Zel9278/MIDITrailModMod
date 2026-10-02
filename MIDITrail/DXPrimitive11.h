@@ -13,8 +13,16 @@
 
 #pragma once
 
+#include <cstdint>
 #include <d3d11.h>
 #include <DirectXMath.h>
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef NULL
+#undef NULL
+#endif
+#define NULL nullptr
+#endif
 
 
 //******************************************************************************
@@ -23,9 +31,15 @@
 struct DXP11_VERTEX {
 	float    pos[3];
 	float    normal[3];
-	unsigned long color;   // D3DCOLOR-style 0xAARRGGBB
+	std::uint32_t color;   // D3DCOLOR-style 0xAARRGGBB
 	float    uv[2];
 };
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+using DXP11_INDEX = std::uint32_t;
+#else
+using DXP11_INDEX = unsigned long;
+#endif
 
 //******************************************************************************
 // Per-draw constants (matches the HLSL cbuffer)
@@ -63,7 +77,7 @@ public:
 	// Map/unmap for filling the buffers (whole-buffer, DISCARD)
 	int LockVertex(ID3D11DeviceContext* pContext, DXP11_VERTEX** ppVertex);
 	void UnlockVertex(ID3D11DeviceContext* pContext);
-	int LockIndex(ID3D11DeviceContext* pContext, unsigned long** ppIndex);
+	int LockIndex(ID3D11DeviceContext* pContext, DXP11_INDEX** ppIndex);
 	void UnlockIndex(ID3D11DeviceContext* pContext);
 
 	void SetWorldMatrix(const DirectX::XMMATRIX& world);

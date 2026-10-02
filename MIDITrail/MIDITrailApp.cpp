@@ -3333,11 +3333,14 @@ int MIDITrailApp::_ExportVideo(const MTVideoExportParams& params)
 
 	MTVideoExportParams ep = params;   // tell ffmpeg the effective supersample factor
 	ep.superSample = ss;
+	// overlay text: render it ss x larger so it keeps its on-screen size after the downscale
+	m_Renderer11.SetOffscreenUiScale((float)ss);
 	if (params.equirect360) { ep.width = ow; ep.height = oh; }   // 2:1 frame, no supersample
 
 	MTFFmpegPipe pipe;
 	if (pipe.Open(ep) != 0) {
 		m_Renderer11.EndOffscreen();
+		m_Renderer11.SetOffscreenUiScale(1.0f);
 		return YN_SET_ERR("Could not start ffmpeg.", 0, 0);
 	}
 
@@ -3395,6 +3398,7 @@ int MIDITrailApp::_ExportVideo(const MTVideoExportParams& params)
 
 	int code = pipe.Close();
 	m_Renderer11.EndOffscreen();
+	m_Renderer11.SetOffscreenUiScale(1.0f);
 	if ((result == 0) && (code != 0)) result = YN_SET_ERR("ffmpeg returned an error.", code, 0);
 
 	// on failure, grab ffmpeg's stderr tail (the real reason) before pipe destructs

@@ -9,7 +9,14 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "DXTexture11.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include <algorithm>
+#include <string>
+#else
 #include <wincodec.h>
+#endif
 
 using namespace YNBaseLib;
 
@@ -23,8 +30,35 @@ int DXTexture11::LoadFromFile(
 		ID3D11ShaderResourceView** ppSRV,
 		unsigned int* pWidth,
 		unsigned int* pHeight
-	)
+)
 {
+#ifdef MIDITRAIL_LINUX_NATIVE
+	int width = 0;
+	int height = 0;
+	int channels = 0;
+	if ((pDevice == NULL) || (pImgFilePath == NULL) || (ppSRV == NULL)) {
+		return YN_SET_ERR("Program error.", 0, 0);
+	}
+	*ppSRV = NULL;
+	std::string image_path(pImgFilePath);
+	std::replace(image_path.begin(), image_path.end(), '\\', '/');
+	unsigned char* pixels = stbi_load(image_path.c_str(), &width, &height, &channels, 4);
+	if (pixels == NULL) {
+		std::fprintf(stderr, "MIDITrail texture load failed: %s (%s)\n",
+			image_path.c_str(), stbi_failure_reason());
+		return YN_SET_ERR("Image load error.", 0, 0);
+	}
+	const int result = CreateFromRGBA(pDevice, pixels, static_cast<unsigned int>(width),
+		static_cast<unsigned int>(height), ppSRV);
+	stbi_image_free(pixels);
+	if (result == 0) {
+		if (pWidth != NULL) *pWidth = static_cast<unsigned int>(width);
+		if (pHeight != NULL) *pHeight = static_cast<unsigned int>(height);
+		std::fprintf(stderr, "MIDITrail texture loaded: %s (%dx%d, %d source channels)\n",
+			image_path.c_str(), width, height, channels);
+	}
+	return result;
+#else
 	int result = 0;
 	HRESULT hr = S_OK;
 	wchar_t pathW[_MAX_PATH];
@@ -120,6 +154,7 @@ EXIT:;
 	if (pDecoder != NULL) pDecoder->Release();
 	if (pFactory != NULL) pFactory->Release();
 	return result;
+#endif
 }
 
 //******************************************************************************

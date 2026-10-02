@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "SMMsgParser.h"
 #include "SMMsgTransmitter.h"
 

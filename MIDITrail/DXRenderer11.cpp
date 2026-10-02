@@ -18,7 +18,18 @@
 #include "MTNoteBoxLive11.h"
 #include "MTNoteRainLive11.h"
 #include "MTGridBox11.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#endif
 #include <d3dcompiler.h>
+#ifdef MIDITRAIL_LINUX_NATIVE
+#undef WINAPI
+#define WINAPI
+#endif
+#include "Linux/MTLinuxD3DBlob.h"
 #include "MTDashboard11.h"
 #include "MTConfigManager11.h"
 #include "MTTimeIndicator11.h"
@@ -32,10 +43,48 @@
 #include "MTBackgroundImage11.h"
 #include "MTStars11.h"
 #include "imgui.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include "Linux/MTLinuxImGuiDX11.h"
+#else
 #include "imgui_impl_dx11.h"
+#endif
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include <SDL3/SDL.h>
+#include "imgui_impl_sdl3.h"
+#include <unistd.h>
+#include <fontconfig/fontconfig.h>
+#include <string>
+
+// a CJK-capable sans font for ImGui (the Windows build merges MS Gothic)
+static std::string _FindImGuiFont()
+{
+	std::string path;
+	if (!FcInit()) return path;
+	FcPattern* pattern = FcNameParse(reinterpret_cast<const FcChar8*>("sans-serif:lang=ja"));
+	FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
+	FcDefaultSubstitute(pattern);
+	FcResult result = FcResultNoMatch;
+	FcPattern* match = FcFontMatch(nullptr, pattern, &result);
+	FcChar8* file = nullptr;
+	if (match && FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch) {
+		path = reinterpret_cast<const char*>(file);
+	}
+	if (match) FcPatternDestroy(match);
+	FcPatternDestroy(pattern);
+	return path;
+}
+#else
 #include "imgui_impl_win32.h"
+#endif
 #include <tchar.h>
 #include "imgui_ja_gryph_ranges.cpp"
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef NULL
+#undef NULL
+#endif
+#define NULL nullptr
+#endif
 
 using namespace YNBaseLib;
 using namespace DirectX;
@@ -56,6 +105,7 @@ DXRenderer11::DXRenderer11()
 	m_ImContext = NULL;
 	m_Width = 0;
 	m_Height = 0;
+	m_SceneTopInset = 0.0f;
 	m_SampleCount = 1;
 	//ced 20260628: SSAA
 	m_SuperSample = 1;
@@ -80,9 +130,15 @@ DXRenderer11::DXRenderer11()
 	m_pNoteRainLive11 = NULL;
 	m_pGridBox11 = NULL;
 	m_pDashboard11 = NULL;
+	m_OffUiScale = 1.0f;
 	m_pConfigMgr11 = NULL;
 	m_pTimeIndicator11 = NULL;
 	m_pPictBoard11 = NULL;
+	m_pImGuiDrawCallback = NULL;
+	m_pImGuiDrawUserData = NULL;
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	m_ImGuiPlatformWindow = NULL;
+	#endif
 	m_pNoteRain11 = NULL;
 	m_pKbdRain11 = NULL;
 	m_pNoteBoxRing11 = NULL;
@@ -145,7 +201,6 @@ int DXRenderer11::Initialize(
 {
 	int result = 0;
 	HRESULT hr = S_OK;
-	RECT rc;
 	UINT width = 0;
 	UINT height = 0;
 	DXGI_SWAP_CHAIN_DESC sd;
@@ -161,12 +216,26 @@ int DXRenderer11::Initialize(
 
 	m_hWnd = hWnd;
 
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	{
+		int pixelWidth = 0;
+		int pixelHeight = 0;
+		if (!SDL_GetWindowSizeInPixels(reinterpret_cast<SDL_Window*>(hWnd), &pixelWidth, &pixelHeight)) {
+			result = YN_SET_ERR("SDL API error.", 0, 0);
+			goto EXIT;
+		}
+		width = static_cast<UINT>(pixelWidth);
+		height = static_cast<UINT>(pixelHeight);
+	}
+	#else
+	RECT rc;
 	if (!GetClientRect(hWnd, &rc)) {
 		result = YN_SET_ERR("Windows API error.", GetLastError(), 0);
 		goto EXIT;
 	}
 	width = (UINT)(rc.right - rc.left);
 	height = (UINT)(rc.bottom - rc.top);
+	#endif
 	if (width == 0) width = 1;
 	if (height == 0) height = 1;
 
@@ -247,7 +316,7 @@ int DXRenderer11::_InitTestQuad()
 {
 	int result = 0;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 	int k = 0;
 
 	result = DXPrimitive11::InitPipeline(m_pDevice);
@@ -485,16 +554,29 @@ ImGuiContext* DXRenderer11::CreateImContext()
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
 	ImFontConfig font_config = {};
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	{
+		const std::string fontPath = _FindImGuiFont();
+		if (fontPath.empty() || io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 15.0f, &font_config) == NULL) {
+			io.Fonts->AddFontDefault();
+		}
+	}
+	#else
 	font_config.FontNo = 0; // Tahoma
 	io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Tahoma.ttf", 14.0f, &font_config, io.Fonts->GetGlyphRangesDefault());
 	font_config.FontNo = 1; // MS Gothic
 	font_config.MergeMode = true;
 	io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\msgothic.ttc", 14.0f, &font_config, glyphRangesJapanese);
+	#endif
 	io.IniFilename = nullptr;
 
 	ImGui::StyleColorsDark();
 
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	ImGui_ImplSDL3_InitForOther(reinterpret_cast<SDL_Window*>(m_ImGuiPlatformWindow));
+	#else
 	ImGui_ImplWin32_Init(m_hWnd);
+	#endif
 	ImGui_ImplDX11_Init(m_pDevice, m_pContext);
 
 	return ImContext;
@@ -531,7 +613,11 @@ bool DXRenderer11::IsMultiSampleSupported(unsigned int sampleCount)
 void DXRenderer11::_BeginImGuiFrame()
 {
 	ImGui_ImplDX11_NewFrame();
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	ImGui_ImplSDL3_NewFrame();
+	#else
 	ImGui_ImplWin32_NewFrame();
+	#endif
 	ImGui::NewFrame();
 }
 
@@ -549,8 +635,18 @@ int DXRenderer11::RenderScene(
 	bool ss = false;
 	unsigned int renderW = 0;
 	unsigned int renderH = 0;
+	unsigned int sceneTop = 0;
+	unsigned int sceneW = 0;
+	unsigned int sceneH = 0;
 	ID3D11RenderTargetView* sceneRTV = NULL;
 	ID3D11DepthStencilView* sceneDSV = NULL;
+	bool hasKbd = false;
+	bool hasNotes = false;
+	bool hasRain = false;
+	bool hasRainKbd = false;
+	bool hasRing = false;
+	bool hasLive = false;
+	bool hasRainLive = false;
 
 	if (m_pContext == NULL) goto EXIT;
 
@@ -566,17 +662,25 @@ int DXRenderer11::RenderScene(
 	}
 
 	_BeginImGuiFrame();
+	if (m_pImGuiDrawCallback != NULL) {
+		m_pImGuiDrawCallback(m_pImGuiDrawUserData);
+	}
 
 	//ced 20260628: SSAA 有効時はシーンを SS オフスクリーン（高解像度）へ描画し、
 	//後段でバックバッファへ線形縮小する。無効時は従来どおりバックバッファへ直接描画。
 	ss = (m_SuperSample > 1) && (m_pSSRTV != NULL) && (m_pSSDSV != NULL) && (m_pBlitVS != NULL);
 	renderW = ss ? (m_Width * m_SuperSample) : m_Width;
 	renderH = ss ? (m_Height * m_SuperSample) : m_Height;
+	sceneTop = (unsigned int)(m_SceneTopInset * (ss ? m_SuperSample : 1) + 0.5f);
+	if (sceneTop >= renderH) sceneTop = 0;
+	sceneW = renderW;
+	sceneH = renderH - sceneTop;
 	sceneRTV = ss ? m_pSSRTV : m_pRTV;
 	sceneDSV = ss ? m_pSSDSV : m_pDSV;
-	if (ss) {
+	{
 		D3D11_VIEWPORT vp; ZeroMemory(&vp, sizeof(vp));
-		vp.Width = (float)renderW; vp.Height = (float)renderH;
+		vp.TopLeftY = (float)sceneTop;
+		vp.Width = (float)sceneW; vp.Height = (float)sceneH;
 		vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
 		m_pContext->RSSetViewports(1, &vp);
 	}
@@ -587,19 +691,19 @@ int DXRenderer11::RenderScene(
 
 	// M4.15: background image, behind everything (screen space, far-plane z)
 	if ((m_pBackgroundImage11 != NULL) && m_pBackgroundImage11->IsReady()) {
-		m_pBackgroundImage11->DrawDX11(m_pContext, renderW, renderH);
+		m_pBackgroundImage11->DrawDX11(m_pContext, sceneW, sceneH);
 	}
 
 	// M2/M3: draw the scene (note field + keyboard) via the real camera
-	bool hasKbd   = (m_pKbd11 != NULL) && m_pKbd11->IsReady();
-	bool hasNotes = (m_pNoteBox11 != NULL) && m_pNoteBox11->IsReady();
-	bool hasRain  = (m_pNoteRain11 != NULL) && m_pNoteRain11->IsReady();
-	bool hasRainKbd = (m_pKbdRain11 != NULL) && m_pKbdRain11->IsReady();
-	bool hasRing  = (m_pNoteBoxRing11 != NULL) && m_pNoteBoxRing11->IsReady();
-	bool hasLive  = (m_pNoteBoxLive11 != NULL) && m_pNoteBoxLive11->IsReady();
-	bool hasRainLive = (m_pNoteRainLive11 != NULL) && m_pNoteRainLive11->IsReady();
+	hasKbd = (m_pKbd11 != NULL) && m_pKbd11->IsReady();
+	hasNotes = (m_pNoteBox11 != NULL) && m_pNoteBox11->IsReady();
+	hasRain = (m_pNoteRain11 != NULL) && m_pNoteRain11->IsReady();
+	hasRainKbd = (m_pKbdRain11 != NULL) && m_pKbdRain11->IsReady();
+	hasRing = (m_pNoteBoxRing11 != NULL) && m_pNoteBoxRing11->IsReady();
+	hasLive = (m_pNoteBoxLive11 != NULL) && m_pNoteBoxLive11->IsReady();
+	hasRainLive = (m_pNoteRainLive11 != NULL) && m_pNoteRainLive11->IsReady();
 	if (hasKbd || hasNotes || hasRain || hasRainKbd || hasRing || hasLive || hasRainLive) {
-		float aspect = (m_Height > 0) ? ((float)m_Width / (float)m_Height) : 1.0f;
+		float aspect = (sceneH > 0) ? ((float)sceneW / (float)sceneH) : 1.0f;
 		XMMATRIX view = XMMatrixIdentity();
 		XMMATRIX proj = XMMatrixIdentity();
 		if (m_pCam11 != NULL) {
@@ -635,26 +739,8 @@ int DXRenderer11::RenderScene(
 			XMFLOAT4 pbLight(0.0f, 0.0f, 1.0f, 0.0f);
 			m_pPictBoard11->DrawDX11(m_pContext, viewProj, pbLight, rollAngle);
 		}
-		// Box scene: keyboard first (writes depth), then the note field. Notes
-		// test depth but don't write it (M3.14 anti-flicker), so a note in front
-		// of the keyboard surface shows over it and a note behind is occluded -
-		// matching the DX9 z-buffer result. Drawing notes first made the later
-		// keyboard always cover them ("notes always behind", worst in flat 2D).
-		if (hasKbd) {
-			XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
-			m_pKbd11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
-		}
-		if (hasNotes) {
-			m_pNoteBox11->DrawDX11(m_pContext, viewProj, rollAngle);
-		}
-		// live monitor: dynamic note boxes (real-time MIDI input); ring live reuses
-		// this same renderer slot (the live object is built in ring mode)
-		if (hasLive) {
-			// DX9 MTScenePianoRoll3DLive light direction (the note boxes carry the DX9
-			// per-face normals, so this is what gives them their 3D relief)
-			XMFLOAT4 lightDir(1.0f, -1.0f, 2.0f, 0.0f);
-			m_pNoteBoxLive11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle);
-		}
+		// PianoRoll note geometry and its camera-dependent overlay order.
+		_DrawPianoRollComponents(viewProj, camPos, rollAngle, hasKbd, hasNotes, hasLive);
 		// Rain scene: keyboard first (writes depth), then the falling notes, so
 		// notes fallen behind the keyboard are occluded (matches DX9 draw order).
 		if (hasRainKbd) {
@@ -685,25 +771,10 @@ int DXRenderer11::RenderScene(
 			XMFLOAT4 tiLight(0.0f, 0.0f, 1.0f, 0.0f);
 			m_pTimeIndicatorRing11->DrawDX11(m_pContext, viewProj, tiLight, rollAngle);
 		}
-		// time indicator (translucent playback section, drawn over the notes)
-		if ((m_pTimeIndicator11 != NULL) && m_pTimeIndicator11->IsReady()) {
-			XMFLOAT4 tiLight(0.0f, 0.0f, 1.0f, 0.0f);
-			m_pTimeIndicator11->DrawDX11(m_pContext, viewProj, tiLight, rollAngle);
-		}
-		// note ripples (camera-facing, needs the camera position)
-		if ((m_pNoteRipple11 != NULL) && m_pNoteRipple11->IsReady()) {
-			XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
-			m_pNoteRipple11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
-		}
-		// note lyrics (text quads over the played notes, camera-facing)
-		if ((m_pNoteLyrics11 != NULL) && m_pNoteLyrics11->IsReady()) {
-			XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
-			m_pNoteLyrics11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
-		}
 	}
 	else if (m_Logo11.IsReady()) {
 		// M4.3: startup / title screen (no song loaded) - the MIDITrail logo
-		float aspect = (m_Height > 0) ? ((float)m_Width / (float)m_Height) : 1.0f;
+		float aspect = (sceneH > 0) ? ((float)sceneW / (float)sceneH) : 1.0f;
 		m_Logo11.DrawDX11(m_pContext, aspect);
 	}
 
@@ -715,9 +786,21 @@ int DXRenderer11::RenderScene(
 		_BlitSSToBackbuffer();
 	}
 
+	{
+		D3D11_VIEWPORT vp; ZeroMemory(&vp, sizeof(vp));
+		const float inset = (m_SceneTopInset < (float)m_Height) ? m_SceneTopInset : 0.0f;
+		vp.TopLeftY = inset;
+		vp.Width = (float)m_Width;
+		vp.Height = (float)m_Height - inset;
+		vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
+		m_pContext->RSSetViewports(1, &vp);
+	}
+
 	// M4: dashboard overlay (on-screen info text), drawn over the scene at native res
 	if ((m_pDashboard11 != NULL) && m_pDashboard11->IsReady()) {
-		m_pDashboard11->DrawDX11(m_pContext, m_Width, m_Height);
+		const unsigned int contentH = (m_SceneTopInset < (float)m_Height)
+			? (m_Height - (unsigned int)(m_SceneTopInset + 0.5f)) : m_Height;
+		m_pDashboard11->DrawDX11(m_pContext, m_Width, contentH);
 	}
 
 	// Mod Mod: Config Manager (ImGui) - GUI editor for conf/*.ini, toggled from
@@ -725,9 +808,6 @@ int DXRenderer11::RenderScene(
 	if (m_pConfigMgr11 != NULL) {
 		m_pConfigMgr11->RenderImGui();
 	}
-
-	// ImGui draws no other overlay during normal frames; it stays initialized for
-	// the loading screen too. File open is via the Win32 menu / drag-drop.
 
 	ImGui::EndFrame();
 	ImGui::Render();
@@ -973,7 +1053,7 @@ int DXRenderer11::RenderOffscreenFrame(bool transparent, int stageSlot)
 
 	// dashboard overlay (file name + counter), same as the live frame
 	if ((m_pDashboard11 != NULL) && m_pDashboard11->IsReady()) {
-		m_pDashboard11->DrawDX11(m_pContext, m_OffW, m_OffH);
+		m_pDashboard11->DrawDX11(m_pContext, m_OffW, m_OffH, m_OffUiScale);
 	}
 
 	// resolve the MSAA target into the single-sample resolve texture (antialias),
@@ -989,6 +1069,40 @@ int DXRenderer11::RenderOffscreenFrame(bool transparent, int stageSlot)
 // draw every active scene component with the given camera (shared by the normal
 // offscreen frame and each 360 cube face)
 //******************************************************************************
+void DXRenderer11::_DrawPianoRollComponents(const XMMATRIX& viewProj, const XMFLOAT3& camPos,
+		float rollAngle, bool hasKbd, bool hasNotes, bool hasLive)
+{
+	// The original PianoRollMod changes the order around the now-line so the
+	// keyboard and translucent effects are not forced behind the note field.
+	const bool indicatorReady = (m_pTimeIndicator11 != NULL) && m_pTimeIndicator11->IsReady();
+	const float indicatorX = indicatorReady ? m_pTimeIndicator11->GetPlayPosX() : camPos.x;
+	const bool cameraBeforeIndicator = indicatorX > camPos.x;
+	XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
+	XMFLOAT4 tiLight(0.0f, 0.0f, 1.0f, 0.0f);
+	if (hasNotes) m_pNoteBox11->DrawDX11(m_pContext, viewProj, rollAngle);
+	if (hasLive) {
+		XMFLOAT4 liveLight(1.0f, -1.0f, 2.0f, 0.0f);
+		m_pNoteBoxLive11->DrawDX11(m_pContext, viewProj, liveLight, rollAngle);
+	}
+
+	if (cameraBeforeIndicator) {
+		if (indicatorReady) m_pTimeIndicator11->DrawDX11(m_pContext, viewProj, tiLight, rollAngle);
+		if ((m_pNoteLyrics11 != NULL) && m_pNoteLyrics11->IsReady())
+			m_pNoteLyrics11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
+		if ((m_pNoteRipple11 != NULL) && m_pNoteRipple11->IsReady())
+			m_pNoteRipple11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
+		if (hasKbd) m_pKbd11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
+	} else {
+		if (hasKbd) m_pKbd11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
+		if ((m_pNoteRipple11 != NULL) && m_pNoteRipple11->IsReady())
+			m_pNoteRipple11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
+		if ((m_pNoteLyrics11 != NULL) && m_pNoteLyrics11->IsReady())
+			m_pNoteLyrics11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
+		if (indicatorReady) m_pTimeIndicator11->DrawDX11(m_pContext, viewProj, tiLight, rollAngle);
+	}
+
+}
+
 void DXRenderer11::_DrawSceneComponents(const XMMATRIX& viewProj, const XMFLOAT3& camPos,
 		float rollAngle, bool transparent)
 {
@@ -1012,16 +1126,7 @@ void DXRenderer11::_DrawSceneComponents(const XMMATRIX& viewProj, const XMFLOAT3
 		XMFLOAT4 pbLight(0.0f, 0.0f, 1.0f, 0.0f);
 		m_pPictBoard11->DrawDX11(m_pContext, viewProj, pbLight, rollAngle);
 	}
-	if (hasKbd) {
-		XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
-		m_pKbd11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
-	}
-	if (hasNotes) m_pNoteBox11->DrawDX11(m_pContext, viewProj, rollAngle);
-	if (hasLive) {
-		// DX9 MTScenePianoRoll3DLive light direction (see the main render path)
-		XMFLOAT4 lightDir(1.0f, -1.0f, 2.0f, 0.0f);
-		m_pNoteBoxLive11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle);
-	}
+	_DrawPianoRollComponents(viewProj, camPos, rollAngle, hasKbd, hasNotes, hasLive);
 	if (hasRainKbd) {
 		XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
 		m_pKbdRain11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle);
@@ -1043,18 +1148,6 @@ void DXRenderer11::_DrawSceneComponents(const XMMATRIX& viewProj, const XMFLOAT3
 	if ((m_pTimeIndicatorRing11 != NULL) && m_pTimeIndicatorRing11->IsReady()) {
 		XMFLOAT4 tiLight(0.0f, 0.0f, 1.0f, 0.0f);
 		m_pTimeIndicatorRing11->DrawDX11(m_pContext, viewProj, tiLight, rollAngle);
-	}
-	if ((m_pTimeIndicator11 != NULL) && m_pTimeIndicator11->IsReady()) {
-		XMFLOAT4 tiLight(0.0f, 0.0f, 1.0f, 0.0f);
-		m_pTimeIndicator11->DrawDX11(m_pContext, viewProj, tiLight, rollAngle);
-	}
-	if ((m_pNoteRipple11 != NULL) && m_pNoteRipple11->IsReady()) {
-		XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
-		m_pNoteRipple11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
-	}
-	if ((m_pNoteLyrics11 != NULL) && m_pNoteLyrics11->IsReady()) {
-		XMFLOAT4 lightDir(0.3f, -0.6f, 0.5f, 0.0f);
-		m_pNoteLyrics11->DrawDX11(m_pContext, viewProj, lightDir, rollAngle, camPos);
 	}
 }
 
@@ -1104,9 +1197,9 @@ int DXRenderer11::_InitBlit()
 	hr = D3DCompile(DXR11_BLIT_SHADER, strlen(DXR11_BLIT_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPS, &pErr);
 	if (FAILED(hr) || (pPS == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = m_pDevice->CreateVertexShader(pVS->GetBufferPointer(), pVS->GetBufferSize(), NULL, &m_pBlitVS);
+	hr = m_pDevice->CreateVertexShader(MTGetD3DBlobBufferPointer(pVS), MTGetD3DBlobBufferSize(pVS), NULL, &m_pBlitVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = m_pDevice->CreatePixelShader(pPS->GetBufferPointer(), pPS->GetBufferSize(), NULL, &m_pBlitPS);
+	hr = m_pDevice->CreatePixelShader(MTGetD3DBlobBufferPointer(pPS), MTGetD3DBlobBufferSize(pPS), NULL, &m_pBlitPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -1139,9 +1232,9 @@ int DXRenderer11::_InitBlit()
 	}
 
 EXIT:;
-	if (pVS != NULL) pVS->Release();
-	if (pPS != NULL) pPS->Release();
-	if (pErr != NULL) pErr->Release();
+	if (pVS != NULL) MTReleaseD3DBlob(pVS);
+	if (pPS != NULL) MTReleaseD3DBlob(pPS);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 	if (result != 0) _ReleaseBlit();
 	return result;
 }
@@ -1193,9 +1286,9 @@ int DXRenderer11::_InitEquirect()
 	hr = D3DCompile(DXR11_EQ_SHADER, strlen(DXR11_EQ_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPS, &pErr);
 	if (FAILED(hr) || (pPS == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = m_pDevice->CreateVertexShader(pVS->GetBufferPointer(), pVS->GetBufferSize(), NULL, &m_pEqVS);
+	hr = m_pDevice->CreateVertexShader(MTGetD3DBlobBufferPointer(pVS), MTGetD3DBlobBufferSize(pVS), NULL, &m_pEqVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = m_pDevice->CreatePixelShader(pPS->GetBufferPointer(), pPS->GetBufferSize(), NULL, &m_pEqPS);
+	hr = m_pDevice->CreatePixelShader(MTGetD3DBlobBufferPointer(pPS), MTGetD3DBlobBufferSize(pPS), NULL, &m_pEqPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -1227,9 +1320,9 @@ int DXRenderer11::_InitEquirect()
 	}
 
 EXIT:;
-	if (pVS != NULL) pVS->Release();
-	if (pPS != NULL) pPS->Release();
-	if (pErr != NULL) pErr->Release();
+	if (pVS != NULL) MTReleaseD3DBlob(pVS);
+	if (pPS != NULL) MTReleaseD3DBlob(pPS);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 	if (result != 0) _ReleaseEquirect();
 	return result;
 }
@@ -1419,12 +1512,13 @@ int DXRenderer11::DrawLoadingScreen(
 		float progress
 	)
 {
-	MSG msg;
 	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
 	if (m_pContext == NULL) return 0;
 	if (ImGui::GetCurrentContext() == NULL) return 0;
 
+#ifndef MIDITRAIL_LINUX_NATIVE
+	MSG msg;
 	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 		if (msg.message == WM_QUIT) {
 			PostQuitMessage((int)msg.wParam);
@@ -1433,6 +1527,7 @@ int DXRenderer11::DrawLoadingScreen(
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
+#endif
 
 	_BeginImGuiFrame();
 
@@ -1496,11 +1591,45 @@ int DXRenderer11::Resize(
 
 	_ReleaseTargets();
 
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	//DXVK Native (2.7.1) ResizeBuffers hands the presenter the PREVIOUS size
+	//(D3D11SwapChain::ChangeProperties reads m_desc before updating it). On Wayland
+	//the surface has no fixed extent, so the swapchain keeps the old size and the
+	//frame is stretched (blurry). Recreate the swapchain at the new size instead;
+	//the device and every scene resource stay as they are.
+	{
+		DXGI_SWAP_CHAIN_DESC sd;
+		IDXGIDevice* pDXGIDevice = NULL;
+		IDXGIAdapter* pAdapter = NULL;
+		IDXGIFactory* pFactory = NULL;
+		hr = m_pSwapChain->GetDesc(&sd);
+		if (SUCCEEDED(hr)) hr = m_pDevice->QueryInterface(__uuidof(IDXGIDevice), (void**)&pDXGIDevice);
+		if (SUCCEEDED(hr)) hr = pDXGIDevice->GetAdapter(&pAdapter);
+		if (SUCCEEDED(hr)) hr = pAdapter->GetParent(__uuidof(IDXGIFactory), (void**)&pFactory);
+		if (SUCCEEDED(hr)) {
+			m_pContext->ClearState();
+			m_pContext->Flush();
+			m_pSwapChain->Release();
+			m_pSwapChain = NULL;
+			sd.BufferDesc.Width = width;
+			sd.BufferDesc.Height = height;
+			hr = pFactory->CreateSwapChain(m_pDevice, &sd, &m_pSwapChain);
+		}
+		if (pFactory != NULL) pFactory->Release();
+		if (pAdapter != NULL) pAdapter->Release();
+		if (pDXGIDevice != NULL) pDXGIDevice->Release();
+		if (FAILED(hr)) {
+			result = YN_SET_ERR("DirectX API error.", hr, 0);
+			goto EXIT;
+		}
+	}
+	#else
 	hr = m_pSwapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
 	if (FAILED(hr)) {
 		result = YN_SET_ERR("DirectX API error.", hr, 0);
 		goto EXIT;
 	}
+	#endif
 
 	result = _CreateTargets(width, height);
 	if (result != 0) goto EXIT;
@@ -1518,6 +1647,16 @@ void DXRenderer11::Terminate()
 	// -> WM_QUIT -> Run() returns -> Terminate()). Calling ImGui_ImplWin32_Shutdown()
 	// at that point touches the dead window and crashes on close. The original DX9
 	// renderer never shut ImGui down either; the OS reclaims it on process exit.
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	//Linux: the SDL window is still alive here, so shut ImGui down properly; the
+	//renderer can then be re-initialized (AA / window size change) with a fresh context.
+	if (m_ImContext != NULL) {
+		ImGui::SetCurrentContext(m_ImContext);
+		ImGui_ImplDX11_Shutdown();
+		ImGui_ImplSDL3_Shutdown();
+		ImGui::DestroyContext(m_ImContext);
+	}
+	#endif
 	m_ImContext = NULL;
 	m_Logo11.Release();
 	_ReleaseTargets();

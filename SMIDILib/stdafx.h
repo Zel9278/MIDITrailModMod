@@ -5,6 +5,9 @@
 
 #pragma once
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include "../MIDITrail/Linux/MTLinuxCompat.h"
+#else
 #include "targetver.h"
 
 #define WIN32_LEAN_AND_MEAN             // Windows ヘッダーから使用されていない部分を除外します。
@@ -15,4 +18,5 @@
 
 // TODO: プログラムに必要な追加ヘッダーをここで参照してください。
 #include "tchar.h"
+#endif
 
