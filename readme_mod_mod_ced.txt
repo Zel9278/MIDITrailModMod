@@ -23,9 +23,42 @@ ImGui は同梱せずパッケージから取得します（どちらの方法�
   → 出力: x64/Release/MIDITrail.exe
     ルートの vcpkg.json により ImGui を自動インストールします（静的リンク）。
 
+■ Linux（xmake、SDL3 + DXVK Native）
+    xmake f -p linux -m release --dxvk_native_root=/usr
+    xmake build MIDITrailLinux
+  → 出力: build/linux/x86_64/release/MIDITrailLinux
+    必要なパッケージや配布用パッケージの作り方は README.linux.md を参照。
+
 In short: install xmake ( https://xmake.io ) and run `xmake`, OR install vcpkg
 ( https://github.com/microsoft/vcpkg ), run `vcpkg integrate install` once, and
 build MIDITrail.sln. ImGui is fetched from the package manager automatically.
+
+────────────────────────────────────────────────────────
+改造点 20261012：Linux ネイティブ版を追加した（SDL3 + DXVK Native + ImGui）
+
+・[NEW][独自] Linux ネイティブ版 MIDITrailLinux を追加。Direct3D 11 の描画コードはそのままで、
+　DXVK Native により Vulkan 上で動く。Windows 版と同じ再生状態の管理・シーン構築・設定ファイルを
+　使い、プラットフォーム依存の部分だけを置き換えた。
+　　・ウィンドウ／キーボード／マウス／ゲームパッド：SDL3（XInput は SDL3 のゲームパッドで代替）
+　　・ダイアログ：ImGui（カラー／グラフィック／MIDI OUT A〜F／MIDI IN／ウィンドウサイズ／
+　　　動画出力／How to view／About）
+　　・MIDI OUT：ALSA シーケンサまたは KDMAPI（libOmniMIDI.so）。SMF のポート番号で A〜F に振り分け
+　　・MIDI IN：ALSA（ライブモニタ、MIDITHRU 対応）
+　　・動画出力：ffmpeg パイプ（AMF の枠は VAAPI に置き換え）、360 度出力も対応
+　　・フォルダ再生／ファイル追加／ドラッグ＆ドロップ／コマンドライン -p -q -d／多重起動の防止
+　　・MIDI ファイルの読み込みは Windows 版と同じ SMFileReader を使う
+　ユーザー設定は ~/.config/MIDITrail/yknk/MIDITrail/ に保存される。RCP 形式（rcpcv.dll）は非対応。
+　詳細は README.linux.md を参照。
+・[NEW] リリースに Linux 版（MIDITrail-mod_mod-linux-x86_64.tar.gz）を追加。GitHub Actions が
+　Fedora 44 のコンテナでビルドし、DXVK Native と vkd3d を同梱する。
+・[FIX] ピアノロールのノートの重なり順を「トラック番号が大きいほど上」に固定した（Windows 版も）。
+　→ChStep が 0 に近い設定（2D シーンなど）では、重なったノートの前後が深度の丸め誤差で決まって
+　　いたため、ブロック状・縞状にちらついていた。チャンネルの奥行きの差がノートの厚みより小さい
+　　ときは同じ面に揃え、トラック（→チャンネル）の順にわずかな深度差を付けて重ねるようにした。
+　　発音中のノートは常に一番上に描く。
+・[FIX] 動画出力で、カウンタなどの文字が画面表示より小さくなっていた不具合を修正（Windows 版も）。
+　→1080p 以下は 2 倍の解像度で描いて ffmpeg で縮小しているが、文字だけ等倍で描いていたため
+　　縮小後に半分の大きさになっていた。縮小倍率の分だけ大きく描くようにした。
 
 ────────────────────────────────────────────────────────
 改造点 20260713：歌詞表示を View メニューから ON/OFF できるようにした
