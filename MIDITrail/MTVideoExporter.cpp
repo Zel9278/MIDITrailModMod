@@ -655,7 +655,7 @@ bool MTFFmpegPipe::GetErrorTail(TCHAR* pBuf, int bufChars)
 	long size = ftell(fp);
 	long toRead = (size > 1500) ? 1500 : size;
 	fseek(fp, size - toRead, SEEK_SET);
-	size_t got = fread(pBuf, 1, (size_t)std::min<long>(toRead, bufChars - 1), fp);
+	size_t got = fread(pBuf, 1, (size_t)(std::min<long>)(toRead, bufChars - 1), fp);
 	fclose(fp);
 	pBuf[got] = '\0';
 	return (pBuf[0] != '\0');

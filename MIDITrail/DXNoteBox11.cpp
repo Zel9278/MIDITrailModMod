@@ -547,7 +547,7 @@ int DXNoteBox11::_CreateInstanceBuffer(
 	{
 		const unsigned long chunkSize = 1UL << 20;
 		for (unsigned long first = 0; first < m_AllNoteNum; first += chunkSize) {
-			const unsigned long count = std::min(chunkSize, m_AllNoteNum - first);
+			const unsigned long count = (std::min)(chunkSize, m_AllNoteNum - first);
 			D3D11_BUFFER_DESC bd;
 			D3D11_SUBRESOURCE_DATA sr;
 			ZeroMemory(&bd, sizeof(bd));
@@ -777,8 +777,8 @@ int DXNoteBox11::DrawDX11(
 		const unsigned long chunkSize = 1UL << 20;
 		for (unsigned long chunkFirst = (lo / chunkSize) * chunkSize;
 			 chunkFirst < hi; chunkFirst += chunkSize) {
-			const unsigned long drawLo = std::max(lo, chunkFirst);
-			const unsigned long drawHi = std::min(hi, chunkFirst + chunkSize);
+			const unsigned long drawLo = (std::max)(lo, chunkFirst);
+			const unsigned long drawHi = (std::min)(hi, chunkFirst + chunkSize);
 			if (drawHi <= drawLo) continue;
 			vbs[1] = m_InstanceVBs[chunkFirst / chunkSize];
 			offsets[1] = static_cast<UINT>((drawLo - chunkFirst) * sizeof(DXNB11_INSTANCE));

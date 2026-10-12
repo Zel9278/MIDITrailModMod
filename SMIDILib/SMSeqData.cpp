@@ -703,11 +703,11 @@ unsigned long SMSeqData::GetTickTimeAtPlayTime(
 
 		const double deltaMsec = _GetDeltaTimeMsec(tempo, deltaTime);
 		if ((double)playTimeMsec <= elapsedMsec + deltaMsec) {
-			const double remainingMsec = std::max(0.0, (double)playTimeMsec - elapsedMsec);
+			const double remainingMsec = (std::max)(0.0, (double)playTimeMsec - elapsedMsec);
 			const double tickPerMsec = ((double)m_TimeDivision * 1000.0) / (double)tempo;
 			if (pTickPerMsec != NULL) *pTickPerMsec = tickPerMsec;
 			const unsigned long partialTicks = (unsigned long)(remainingMsec * tickPerMsec);
-			return std::min(m_TotalTickTime, tickTime + std::min(deltaTime, partialTicks));
+			return (std::min)(m_TotalTickTime, tickTime + (std::min)(deltaTime, partialTicks));
 		}
 
 		tickTime += deltaTime;
