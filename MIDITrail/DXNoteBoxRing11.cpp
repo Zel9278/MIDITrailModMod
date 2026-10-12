@@ -9,7 +9,18 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "DXNoteBoxRing11.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#endif
 #include <d3dcompiler.h>
+#ifdef MIDITRAIL_LINUX_NATIVE
+#undef WINAPI
+#define WINAPI
+#endif
+#include "Linux/MTLinuxD3DBlob.h"
 
 using namespace YNBaseLib;
 using namespace DirectX;
@@ -118,9 +129,9 @@ int DXNoteBoxRing11::InitPipeline(ID3D11Device* pDevice)
 	hr = D3DCompile(DXNBR11_SHADER, strlen(DXNBR11_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPSBlob, &pErr);
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &s_pVS);
+	hr = pDevice->CreateVertexShader(MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &s_pPS);
+	hr = pDevice->CreatePixelShader(MTGetD3DBlobBufferPointer(pPSBlob), MTGetD3DBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -129,7 +140,7 @@ int DXNoteBoxRing11::InitPipeline(ID3D11Device* pDevice)
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1,  0, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,     1, 16, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 		};
-		hr = pDevice->CreateInputLayout(il, 3, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 3, MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -213,9 +224,9 @@ int DXNoteBoxRing11::InitPipeline(ID3D11Device* pDevice)
 	}
 
 EXIT:;
-	if (pVSBlob != NULL) pVSBlob->Release();
-	if (pPSBlob != NULL) pPSBlob->Release();
-	if (pErr != NULL) pErr->Release();
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 	if (result != 0) ReleasePipeline();
 	return result;
 }

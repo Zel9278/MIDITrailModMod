@@ -114,7 +114,7 @@ int MTNoteRipple11::Create(
 
 	// identity index buffer (the ripple vertices are already a triangle list)
 	{
-		unsigned long* pi = NULL;
+		DXP11_INDEX* pi = nullptr;
 		unsigned long i = 0;
 		result = m_Prim.CreateIndexBuffer(pDevice, m_VertCapacity);
 		if (result != 0) goto EXIT;

@@ -99,7 +99,7 @@ int MTDashboard11::Create(ID3D11Device* pDevice, ID3D11DeviceContext* pContext)
 	if (result != 0) goto EXIT;
 
 	for (i = 0; i < MTDB11_MAX_LINES; i++) {
-		unsigned long* pi = NULL;
+		DXP11_INDEX* pi = nullptr;
 		result = m_Lines[i].prim.CreateVertexBuffer(pDevice, 4);
 		if (result != 0) goto EXIT;
 		result = m_Lines[i].prim.CreateIndexBuffer(pDevice, 6);
@@ -276,15 +276,19 @@ int MTDashboard11::_RegenLine(int idx)
 //******************************************************************************
 // Draw: file name top-left, counter block bottom-left (screen-space quads)
 //******************************************************************************
-int MTDashboard11::DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW, unsigned int screenH)
+int MTDashboard11::DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW, unsigned int screenH,
+		float pixelScale)
 {
 	int i = 0;
 	XMMATRIX ident = XMMatrixIdentity();
 	XMFLOAT4 light(0.0f, 0.0f, 1.0f, 0.0f);
-	float topY = (float)MTDB11_MARGIN;
+	if (pixelScale <= 0.0f) pixelScale = 1.0f;
+	const float margin = (float)MTDB11_MARGIN * pixelScale;
+	const float lineGap = (float)MTDB11_LINE_GAP * pixelScale;
+	float topY = margin;
 	float bottomBlockH = 0.0f;
-	float maxW = (float)screenW - 2.0f * (float)MTDB11_MARGIN;
-	float mag = MTDB11_DEF_MAG;   // start at the default magnification, shrink to fit width
+	float maxW = (float)screenW - 2.0f * margin;
+	float mag = MTDB11_DEF_MAG * pixelScale;   // start at the default magnification, shrink to fit width
 
 	if (!m_Ready || (screenW == 0) || (screenH == 0)) return 0;
 
@@ -302,10 +306,10 @@ int MTDashboard11::DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW,
 
 	for (i = 0; i < MTDB11_MAX_LINES; i++) {
 		if ((m_Lines[i].anchor == AnchorBottom) && (m_Lines[i].pSRV != NULL))
-			bottomBlockH += (float)m_Lines[i].texH * mag + (float)MTDB11_LINE_GAP;
+			bottomBlockH += (float)m_Lines[i].texH * mag + lineGap;
 	}
 
-	float bottomY = (float)screenH - bottomBlockH - (float)MTDB11_MARGIN;
+	float bottomY = (float)screenH - bottomBlockH - margin;
 
 	for (i = 0; i < MTDB11_MAX_LINES; i++) {
 		Line& line = m_Lines[i];
@@ -313,14 +317,14 @@ int MTDashboard11::DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW,
 
 		float w = (float)line.texW * mag;
 		float h = (float)line.texH * mag;
-		float px = (float)MTDB11_MARGIN;
+		float px = margin;
 		float py;
 		if (line.anchor == AnchorTop) {
 			py = topY;
-			topY += h + (float)MTDB11_LINE_GAP;
+			topY += h + lineGap;
 		} else {
 			py = bottomY;
-			bottomY += h + (float)MTDB11_LINE_GAP;
+			bottomY += h + lineGap;
 		}
 
 		float x0 = -1.0f + 2.0f * (px) / (float)screenW;

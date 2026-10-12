@@ -108,6 +108,7 @@ int MTNoteLyrics11::Create(
 		unsigned long cnt = pRT->GetSize();
 		for (i = 0; i < cnt; i++) {
 			if (pRT->GetNote(i, &note) != 0) continue;
+			if (note.lyric[0] == '\0') continue;
 			m_NoteListRT.AddNote(note);
 		}
 	}
@@ -134,7 +135,7 @@ int MTNoteLyrics11::Create(
 
 	// identity index buffer (quads are an explicit triangle list)
 	{
-		unsigned long* pi = NULL;
+		DXP11_INDEX* pi = nullptr;
 		result = m_Prim.CreateIndexBuffer(pDevice, m_VertCapacity);
 		if (result != 0) goto EXIT;
 		result = m_Prim.LockIndex(pContext, &pi);
@@ -317,7 +318,10 @@ unsigned long MTNoteLyrics11::_BuildVertices(
 		if (m_NoteListRT.GetNote(m_pStatus[i].index, &note) != 0) continue;
 
 		// one quad per (port,ch,note), keeping the strongest envelope
-		if (note.portNo >= MTNOTELYRICS11_MAX_PORT) continue;
+		if (activeNum >= (m_VertCapacity / 6)) break;
+		if (note.portNo >= MTNOTELYRICS11_MAX_PORT
+				|| note.chNo >= SM_MAX_CH_NUM
+				|| note.noteNo >= SM_MAX_NOTE_NUM) continue;
 		if (m_KeyDownRate[note.portNo][note.chNo][note.noteNo] >= m_pStatus[i].keyDownRate) continue;
 
 		short pbValue = _Bend()->GetValue(note.portNo, note.chNo);
@@ -453,7 +457,6 @@ int MTNoteLyrics11::DrawDX11(
 
 	activeNum = _BuildVertices(camPos, (DXP11_VERTEX*)m_pCpuBuf);
 	if (activeNum == 0) return 0;
-	if (activeNum * 6 > m_VertCapacity) activeNum = m_VertCapacity / 6;
 
 	if (m_Prim.LockVertex(pContext, &pv) != 0) return 0;
 	memcpy(pv, m_pCpuBuf, (size_t)activeNum * 6 * sizeof(DXP11_VERTEX));

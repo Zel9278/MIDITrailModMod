@@ -52,7 +52,7 @@ int MTPictBoard11::Create(
 	D3DXVECTOR3 vLU, vRU, vLD, vRD, mv;
 	float boardHeight = 0.0f, boardWidth = 0.0f, chStep = 0.0f, relX = 0.0f;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 
 	Release();
 

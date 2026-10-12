@@ -49,7 +49,7 @@ int MTGridRing11::Create(
 	DWORD color = 0;
 	unsigned long totalTickTime = 0;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 	unsigned long i = 0;
 	const D3DXVECTOR3* bases[2];
 

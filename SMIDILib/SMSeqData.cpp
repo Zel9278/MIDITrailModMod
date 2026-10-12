@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "SMEventMeta.h"
 #include "SMSeqData.h"
@@ -18,7 +18,9 @@
 #include <queue>
 #include <algorithm>
 #include <iterator>
+#ifndef MIDITRAIL_LINUX_NATIVE
 #include <mbctype.h>
+#endif
 
 using namespace YNBaseLib;
 
@@ -679,6 +681,49 @@ unsigned long SMSeqData::GetTotalPlayTime()
 	return m_TotalPlayTime;
 }
 
+unsigned long SMSeqData::GetTickTimeAtPlayTime(
+		unsigned long playTimeMsec,
+		double* pTickPerMsec
+	)
+{
+	unsigned long tempo = SM_DEFAULT_TEMPO;
+	unsigned long tickTime = 0;
+	double elapsedMsec = 0.0;
+	SMEvent event;
+	SMEventMeta metaEvent;
+
+	if (pTickPerMsec != NULL) {
+		*pTickPerMsec = ((double)m_TimeDivision * 1000.0) / (double)tempo;
+	}
+	if (m_pMergedTrack == NULL) return 0;
+
+	for (unsigned long index = 0; index < m_pMergedTrack->GetSize(); index++) {
+		unsigned long deltaTime = 0;
+		if (m_pMergedTrack->GetDataSet(index, &deltaTime, &event, NULL) != 0) break;
+
+		const double deltaMsec = _GetDeltaTimeMsec(tempo, deltaTime);
+		if ((double)playTimeMsec <= elapsedMsec + deltaMsec) {
+			const double remainingMsec = (std::max)(0.0, (double)playTimeMsec - elapsedMsec);
+			const double tickPerMsec = ((double)m_TimeDivision * 1000.0) / (double)tempo;
+			if (pTickPerMsec != NULL) *pTickPerMsec = tickPerMsec;
+			const unsigned long partialTicks = (unsigned long)(remainingMsec * tickPerMsec);
+			return (std::min)(m_TotalTickTime, tickTime + (std::min)(deltaTime, partialTicks));
+		}
+
+		tickTime += deltaTime;
+		elapsedMsec += deltaMsec;
+		if (event.GetType() == SMEvent::EventMeta) {
+			metaEvent.Attach(&event);
+			if (metaEvent.GetType() == 0x51) tempo = metaEvent.GetTempo();
+		}
+	}
+
+	if (pTickPerMsec != NULL) {
+		*pTickPerMsec = ((double)m_TimeDivision * 1000.0) / (double)tempo;
+	}
+	return m_TotalTickTime;
+}
+
 //******************************************************************************
 // テンポ取得(μsec.)
 //******************************************************************************
@@ -1175,6 +1220,11 @@ const WCHAR* SMSeqData::GetFileName()
 //******************************************************************************
 int SMSeqData::_StringToWstring(std::string* pStr, std::wstring* pWstr)
 {
+#ifdef MIDITRAIL_LINUX_NATIVE
+	if (pStr == NULL || pWstr == NULL) return YN_SET_ERR("Program error.", 0, 0);
+	pWstr->assign(pStr->begin(), pStr->end());
+	return 0;
+#else
 	int result = 0;
 	int apiresult = 0;
 	int buffSize = 0;
@@ -1217,6 +1267,7 @@ int SMSeqData::_StringToWstring(std::string* pStr, std::wstring* pWstr)
 EXIT:;
 	delete [] wstrBuff;
 	return result;
+#endif
 }
 
 int SMSeqData::StringToWstring(std::string* pStr, std::wstring* pWstr)

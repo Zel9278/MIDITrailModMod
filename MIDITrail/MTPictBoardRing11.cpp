@@ -57,7 +57,7 @@ int MTPictBoardRing11::Create(
 	D3DXVECTOR3 basePos, mv;
 	float chStep = 0.0f, boardHeight = 0.0f, boardWidth = 0.0f;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 	unsigned long i = 0;
 
 	Release();

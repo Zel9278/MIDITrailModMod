@@ -19,8 +19,14 @@
 #include "DXPrimitive11.h"
 #include "MTLogo11.h"
 #include "imgui.h"
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include "Linux/MTLinuxImGuiDX11.h"
+#else
 #include "imgui_impl_dx11.h"
+#endif
+#ifndef MIDITRAIL_LINUX_NATIVE
 #include "imgui_impl_win32.h"
+#endif
 
 
 class MTKeyboard11;
@@ -117,6 +123,9 @@ public:
 	int ReadOffscreenBGRA(int stageSlot, unsigned char* pDst, int dstRowBytes);
 	void EndOffscreen();
 	int GetOffscreenWidth()  { return (int)m_OffW; }
+	//size multiplier for the overlay text in off-screen frames (= the export
+	//supersample factor, so the text keeps its on-screen size after downscaling)
+	void SetOffscreenUiScale(float scale) { m_OffUiScale = (scale > 0.0f) ? scale : 1.0f; }
 	int GetOffscreenHeight() { return (int)m_OffH; }
 
 	//M4.13: Ring-scene decorations (NULL = none)
@@ -145,6 +154,14 @@ public:
 
 	//M4.5: the picture board to draw (NULL = none)
 	void SetPictBoard11(MTPictBoard11* pPB) { m_pPictBoard11 = pPB; }
+	void SetImGuiDrawCallback(void (*callback)(void*), void* userData) {
+		m_pImGuiDrawCallback = callback;
+		m_pImGuiDrawUserData = userData;
+	}
+	void SetSceneTopInset(float inset) { m_SceneTopInset = (inset > 0.0f) ? inset : 0.0f; }
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	void SetImGuiPlatformWindow(void* window) { m_ImGuiPlatformWindow = window; }
+	#endif
 
 	//Loading screen (called periodically during a long load)
 	int DrawLoadingScreen(const char* message, float progress);
@@ -164,6 +181,7 @@ private:
 	ImGuiContext* m_ImContext;
 	unsigned int m_Width;
 	unsigned int m_Height;
+	float m_SceneTopInset;
 	unsigned int m_SampleCount;   // MSAA sample count (1 = off)
 
 	// ced 20260628: SSAA (supersampling). When m_SuperSample > 1 the 3D scene is
@@ -233,6 +251,7 @@ private:
 	ID3D11DepthStencilView* m_pOffDSVMS;
 	unsigned int            m_OffSampleCount;   // export MSAA sample count (1 = off)
 	unsigned int            m_OffW;
+	float                   m_OffUiScale;
 	unsigned int            m_OffH;
 
 	// 360 (equirectangular) export: render the scene into a cubemap from the camera
@@ -263,6 +282,9 @@ private:
 	int  _RenderFrame360(bool transparent, int stageSlot);
 	void _DrawSceneComponents(const DirectX::XMMATRIX& viewProj, const DirectX::XMFLOAT3& camPos,
 			float rollAngle, bool transparent);
+	void _DrawPianoRollComponents(const DirectX::XMMATRIX& viewProj,
+			const DirectX::XMFLOAT3& camPos, float rollAngle,
+			bool hasKbd, bool hasNotes, bool hasLive);
 
 	// M4.16: starfield (not owned; NULL = none)
 	MTStars11* m_pStars11;
@@ -290,6 +312,11 @@ private:
 
 	// M4.5: picture board (not owned; NULL = none)
 	MTPictBoard11* m_pPictBoard11;
+	void (*m_pImGuiDrawCallback)(void*);
+	void* m_pImGuiDrawUserData;
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	void* m_ImGuiPlatformWindow;
+	#endif
 
 	int _CreateTargets(unsigned int width, unsigned int height);
 	void _ReleaseTargets();

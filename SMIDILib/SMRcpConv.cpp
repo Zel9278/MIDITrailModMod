@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "shlwapi.h"
 #include "YNBaseLib.h"
 #include "SMRcpConv.h"

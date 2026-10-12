@@ -39,6 +39,9 @@ public:
 		EffectTimeIndicator,
 		EffectGridBox,
 // <<< add 20180404 yossiepon end
+// >>> add ced 20260713: lyrics (0x05 text over the played notes) as its own toggle
+		EffectLyrics,
+// <<< add ced 20260713
 	};
 
 	typedef std::map<std::string, float>  MTViewParamMap;

@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "SMCommon.h"
 #include "SMTrack.h"
@@ -392,7 +392,12 @@ int SMTrack::_GetNoteList(
 				//歌詞の先頭がSPC(0x20)以降であれば、歌詞を格納する
 				if( (lyric.length() > 0) && (((unsigned char)lyric.c_str()[0]) > 0x20) ) {
 					//note.lyric は char[]（DX11/MBCS）。strncpy_s + _TRUNCATE で安全に格納する。
-					::strncpy_s(note.lyric, sizeof(note.lyric), lyric.c_str(), _TRUNCATE);
+				#ifdef MIDITRAIL_LINUX_NATIVE
+				std::strncpy(note.lyric, lyric.c_str(), sizeof(note.lyric) - 1);
+				note.lyric[sizeof(note.lyric) - 1] = '\0';
+				#else
+				::strncpy_s(note.lyric, sizeof(note.lyric), lyric.c_str(), _TRUNCATE);
+				#endif
 					result = pNoteList->SetNote(pNoteList->GetSize() - 1, &note);
 					if (result != 0) goto EXIT;
 				}

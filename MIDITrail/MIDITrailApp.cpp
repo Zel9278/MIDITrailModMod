@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "imagehlp.h"
 #include "shellapi.h"
 #include "ShObjIdl.h"   // IFileOpenDialog (folder select) - 1.4.1 feature port
@@ -83,6 +83,7 @@ MIDITrailApp::MIDITrailApp(void)
 	//表示状態
 	m_isEnablePianoKeyboard = true;
 	m_isEnableRipple = true;
+	m_isEnableLyrics = true;
 	m_isEnablePitchBend = true;
 	m_isEnablePitchBendAllNotes = false;
 	m_isEnableStars = true;
@@ -986,6 +987,11 @@ LRESULT MIDITrailApp::_WndProcImpl(
 				case IDM_ENABLE_RIPPLE:
 					//表示効果：波紋
 					result = _OnMenuEnableEffect(MTScene::EffectRipple);
+					if (result != 0) goto EXIT;
+					break;
+				case IDM_ENABLE_LYRICS:
+					//表示効果：歌詞
+					result = _OnMenuEnableEffect(MTScene::EffectLyrics);
 					if (result != 0) goto EXIT;
 					break;
 				case IDM_ENABLE_PITCHBEND:
@@ -2032,8 +2038,7 @@ void MIDITrailApp::_ApplyDX11Visibility()
 		else {
 			m_Renderer11.SetKeyboard11(m_isEnablePianoKeyboard ? &m_Kbd11 : NULL);
 			m_Renderer11.SetNoteRipple11(m_isEnableRipple ? &m_NoteRipple11 : NULL);
-			//lyrics share the Ripple toggle (DX9 EffectRipple drove both)
-			m_Renderer11.SetNoteLyrics11(m_isEnableRipple ? &m_NoteLyrics11 : NULL);
+			m_Renderer11.SetNoteLyrics11(m_isEnableLyrics ? &m_NoteLyrics11 : NULL);
 			m_Renderer11.SetGridBox11(m_isEnableGridBox ? &m_GridBox11 : NULL);
 			m_Renderer11.SetTimeIndicator11(m_isEnableTimeIndicator ? &m_TimeIndicator11 : NULL);
 			m_Renderer11.SetDashboard11(m_isEnableCounter ? &m_Dashboard11 : NULL);
@@ -2055,9 +2060,8 @@ void MIDITrailApp::_ApplyDX11Visibility()
 		m_Renderer11.SetTimeIndicatorRing11((!live && m_isEnableTimeIndicator) ? &m_TimeIndicatorRing11 : NULL);
 		m_Renderer11.SetNoteRipple11(m_isEnableRipple ? &m_NoteRipple11 : NULL);
 		m_Renderer11.SetPictBoardRing11(m_isEnablePianoKeyboard ? &m_PictBoardRing11 : NULL);
-		//ring lyrics (1.4.1 ported): playback only (needs the pre-built note list) and
-		//shares the Ripple toggle, same as the 3D/2D lyrics.
-		m_Renderer11.SetNoteLyrics11((!live && m_isEnableRipple) ? &m_NoteLyrics11 : NULL);
+		//ring lyrics (1.4.1 ported): playback only (needs the pre-built note list)
+		m_Renderer11.SetNoteLyrics11((!live && m_isEnableLyrics) ? &m_NoteLyrics11 : NULL);
 		m_Renderer11.SetDashboard11(m_isEnableCounter ? &m_Dashboard11 : NULL);
 	}
 }
@@ -2249,6 +2253,9 @@ int MIDITrailApp::_OnMenuEnableEffect(
 			break;
 		case MTScene::EffectRipple:
 			m_isEnableRipple = m_isEnableRipple ? false : true;
+			break;
+		case MTScene::EffectLyrics:
+			m_isEnableLyrics = m_isEnableLyrics ? false : true;
 			break;
 		case MTScene::EffectPitchBend:
 			m_isEnablePitchBend = m_isEnablePitchBend ? false : true;
@@ -3233,9 +3240,14 @@ void MIDITrailApp::_FeedDX11Tick(unsigned long tick, unsigned long playMs)
 		m_NoteBox11.SetCurTickTime(tick);
 		// song time scale (ticks/ms) for the keyboard press envelope: TimeDivision*BPM/60000.
 		// Uses the SONG tempo (not play speed) - the polled tick already carries speed.
+		// The note box uses the same scale to decay the active-note flash over a fixed time.
 		{
 			unsigned long tpqn = m_SeqData.GetTimeDivision();
-			if (tpqn > 0) m_Kbd11.SetSongTickPerMs((double)tpqn * (double)m_CurSongBPM / 60000.0);
+			if (tpqn > 0) {
+				double tickPerMs = (double)tpqn * (double)m_CurSongBPM / 60000.0;
+				m_Kbd11.SetSongTickPerMs(tickPerMs);
+				m_NoteBox11.SetSongTickPerMs(tickPerMs);
+			}
 		}
 		m_Kbd11.SetCurTickTime(tick);
 		m_NoteRipple11.SetCurTickTime(tick);
@@ -3321,11 +3333,14 @@ int MIDITrailApp::_ExportVideo(const MTVideoExportParams& params)
 
 	MTVideoExportParams ep = params;   // tell ffmpeg the effective supersample factor
 	ep.superSample = ss;
+	// overlay text: render it ss x larger so it keeps its on-screen size after the downscale
+	m_Renderer11.SetOffscreenUiScale((float)ss);
 	if (params.equirect360) { ep.width = ow; ep.height = oh; }   // 2:1 frame, no supersample
 
 	MTFFmpegPipe pipe;
 	if (pipe.Open(ep) != 0) {
 		m_Renderer11.EndOffscreen();
+		m_Renderer11.SetOffscreenUiScale(1.0f);
 		return YN_SET_ERR("Could not start ffmpeg.", 0, 0);
 	}
 
@@ -3383,6 +3398,7 @@ int MIDITrailApp::_ExportVideo(const MTVideoExportParams& params)
 
 	int code = pipe.Close();
 	m_Renderer11.EndOffscreen();
+	m_Renderer11.SetOffscreenUiScale(1.0f);
 	if ((result == 0) && (code != 0)) result = YN_SET_ERR("ffmpeg returned an error.", code, 0);
 
 	// on failure, grab ffmpeg's stderr tail (the real reason) before pipe destructs
@@ -3700,11 +3716,11 @@ int MIDITrailApp::_SetupDX11Scene()
 		m_NoteRipple11.Create(pDevice, pContext, pSceneName, &m_SeqData);
 		m_Renderer11.SetNoteRipple11(&m_NoteRipple11);
 
-		//note lyrics (0x05 text drawn over the played notes); shares the Ripple toggle
+		//note lyrics (0x05 text drawn over the played notes); View > Lyrics toggles it
 		m_NoteLyrics11.SetPitchBend(&m_NotePitchBend11);
 		m_NoteLyrics11.SetRingMode(false);   //planar layout for 3D/2D
 		m_NoteLyrics11.Create(pDevice, pContext, pSceneName, &m_SeqData);
-		m_Renderer11.SetNoteLyrics11(&m_NoteLyrics11);
+		m_Renderer11.SetNoteLyrics11(m_isEnableLyrics ? &m_NoteLyrics11 : NULL);
 
 		//M3: grid box (piano-roll grid lines, spatial reference)
 		m_Renderer11.DrawLoadingScreen("Building grid...", 0.97f);
@@ -3826,7 +3842,7 @@ int MIDITrailApp::_SetupDX11Scene()
 		m_NoteLyrics11.SetPitchBend(&m_NotePitchBend11);
 		m_NoteLyrics11.SetRingMode(true);
 		m_NoteLyrics11.Create(pDevice, pContext, pSceneName, &m_SeqData);
-		m_Renderer11.SetNoteLyrics11(&m_NoteLyrics11);
+		m_Renderer11.SetNoteLyrics11(m_isEnableLyrics ? &m_NoteLyrics11 : NULL);
 
 		m_Renderer11.SetNoteBox11(NULL);
 		m_Renderer11.SetNoteRain11(NULL);
@@ -4301,6 +4317,7 @@ int MIDITrailApp::_ChangeMenuStyle()
 		IDM_VIEW_SINGLEKEYBOARD,
 		IDM_ENABLE_PIANOKEYBOARD,
 		IDM_ENABLE_RIPPLE,
+		IDM_ENABLE_LYRICS,
 		IDM_ENABLE_PITCHBEND,
 		IDM_ENABLE_PITCHBEND_ALLNOTES,
 		IDM_ENABLE_STARS,
@@ -4349,6 +4366,7 @@ int MIDITrailApp::_ChangeMenuStyle()
 		{	MF_ENABLED,	MF_ENABLED,	MF_GRAYED,	MF_GRAYED,	MF_ENABLED,	MF_GRAYED	},	//IDM_VIEW_SINGLEKEYBOARD
 		{	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED	},	//IDM_ENABLE_PIANOKEYBOARD
 		{	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED	},	//IDM_ENABLE_RIPPLE
+		{	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED	},	//IDM_ENABLE_LYRICS
 		{	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED	},	//IDM_ENABLE_PITCHBEND
 		{	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED	},	//IDM_ENABLE_PITCHBEND_ALLNOTES
 		{	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED,	MF_ENABLED	},	//IDM_ENABLE_STARS
@@ -4521,6 +4539,7 @@ int MIDITrailApp::_LoadSceneConf()
 	if (m_isAutoSaveViewSettings) {
 		m_ViewConf.GetInt(_T("EnablePianoKeyboard"),     &val, m_isEnablePianoKeyboard    ? 1 : 0); m_isEnablePianoKeyboard     = (val == 1);
 		m_ViewConf.GetInt(_T("EnableRipple"),            &val, m_isEnableRipple           ? 1 : 0); m_isEnableRipple            = (val == 1);
+		m_ViewConf.GetInt(_T("EnableLyrics"),            &val, m_isEnableLyrics           ? 1 : 0); m_isEnableLyrics            = (val == 1);
 		m_ViewConf.GetInt(_T("EnablePitchBend"),         &val, m_isEnablePitchBend        ? 1 : 0); m_isEnablePitchBend         = (val == 1);
 		m_ViewConf.GetInt(_T("EnablePitchBendAllNotes"), &val, m_isEnablePitchBendAllNotes? 1 : 0); m_isEnablePitchBendAllNotes = (val == 1);
 		m_ViewConf.GetInt(_T("EnableStars"),             &val, m_isEnableStars            ? 1 : 0); m_isEnableStars             = (val == 1);
@@ -4560,6 +4579,7 @@ int MIDITrailApp::_SaveSceneConf()
 	if (m_isAutoSaveViewSettings) {
 		m_ViewConf.SetInt(_T("EnablePianoKeyboard"),     m_isEnablePianoKeyboard     ? 1 : 0);
 		m_ViewConf.SetInt(_T("EnableRipple"),            m_isEnableRipple            ? 1 : 0);
+		m_ViewConf.SetInt(_T("EnableLyrics"),            m_isEnableLyrics            ? 1 : 0);
 		m_ViewConf.SetInt(_T("EnablePitchBend"),         m_isEnablePitchBend         ? 1 : 0);
 		m_ViewConf.SetInt(_T("EnablePitchBendAllNotes"), m_isEnablePitchBendAllNotes ? 1 : 0);
 		m_ViewConf.SetInt(_T("EnableStars"),             m_isEnableStars             ? 1 : 0);
@@ -5033,6 +5053,9 @@ int MIDITrailApp::_UpdateMenuCheckmark()
 
 	//波紋効果
 	_CheckMenuItem(IDM_ENABLE_RIPPLE, m_isEnableRipple);
+
+	//歌詞
+	_CheckMenuItem(IDM_ENABLE_LYRICS, m_isEnableLyrics);
 
 	//ピッチベンド効果
 	_CheckMenuItem(IDM_ENABLE_PITCHBEND, m_isEnablePitchBend);

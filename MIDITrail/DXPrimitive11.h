@@ -13,8 +13,16 @@
 
 #pragma once
 
+#include <cstdint>
 #include <d3d11.h>
 #include <DirectXMath.h>
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef NULL
+#undef NULL
+#endif
+#define NULL nullptr
+#endif
 
 
 //******************************************************************************
@@ -23,9 +31,15 @@
 struct DXP11_VERTEX {
 	float    pos[3];
 	float    normal[3];
-	unsigned long color;   // D3DCOLOR-style 0xAARRGGBB
+	std::uint32_t color;   // D3DCOLOR-style 0xAARRGGBB
 	float    uv[2];
 };
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+using DXP11_INDEX = std::uint32_t;
+#else
+using DXP11_INDEX = unsigned long;
+#endif
 
 //******************************************************************************
 // Per-draw constants (matches the HLSL cbuffer)
@@ -63,7 +77,7 @@ public:
 	// Map/unmap for filling the buffers (whole-buffer, DISCARD)
 	int LockVertex(ID3D11DeviceContext* pContext, DXP11_VERTEX** ppVertex);
 	void UnlockVertex(ID3D11DeviceContext* pContext);
-	int LockIndex(ID3D11DeviceContext* pContext, unsigned long** ppIndex);
+	int LockIndex(ID3D11DeviceContext* pContext, DXP11_INDEX** ppIndex);
 	void UnlockIndex(ID3D11DeviceContext* pContext);
 
 	void SetWorldMatrix(const DirectX::XMMATRIX& world);
@@ -74,6 +88,7 @@ public:
 	void SetAdditiveBlend(bool isAdditive) { m_Additive = isAdditive; }  // glow (SRCALPHA/ONE)
 	void SetLineTopology(bool isLines) { m_LineTopology = isLines; }     // LINELIST instead of TRIANGLELIST
 	void SetPointTopology(bool isPoints) { m_PointTopology = isPoints; } // POINTLIST instead of TRIANGLELIST (stars)
+	void SetDepthWrite(bool write) { m_DepthWrite = write; }             // false = test but don't write depth (backdrop grid)
 
 	// Draw. viewProj is the camera's view*proj. drawPrimitiveNum<0 => all.
 	int Draw(ID3D11DeviceContext* pContext, const DirectX::XMMATRIX& viewProj,
@@ -92,6 +107,7 @@ private:
 	bool m_Additive;
 	bool m_LineTopology;
 	bool m_PointTopology;
+	bool m_DepthWrite;   // false = don't write depth (so an invisible/backdrop primitive can't occlude notes)
 
 	// shared pipeline objects (one set per process/device)
 	static ID3D11VertexShader* s_pVS;
@@ -103,6 +119,7 @@ private:
 	static ID3D11BlendState* s_pBlend;
 	static ID3D11BlendState* s_pBlendAdd;   // additive (SRCALPHA/ONE) for glow effects
 	static ID3D11DepthStencilState* s_pDepth;
+	static ID3D11DepthStencilState* s_pDepthNoWrite;   // depth test on, write off
 
 	void operator=(const DXPrimitive11&);
 	DXPrimitive11(const DXPrimitive11&);

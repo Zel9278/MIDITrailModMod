@@ -6,13 +6,48 @@
 //
 //******************************************************************************
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+#include <cstdio>
+#include <cstring>
+#define YN_SET_ERR(message, info1, info2) \
+	(std::fprintf(stderr, "%s (0x%llx, 0x%llx)\n", message, \
+		static_cast<unsigned long long>(info1), static_cast<unsigned long long>(info2)), -1)
+#else
 #include "stdafx.h"
 #include "YNBaseLib.h"
+#endif
 #include "DXPrimitive11.h"
+#ifndef MIDITRAIL_LINUX_NATIVE
 #include <d3dcompiler.h>
+#else
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#include <d3dcompiler.h>
+#undef WINAPI
+#define WINAPI
+#undef NULL
+#define NULL nullptr
+#endif
+#include "Linux/MTLinuxD3DBlob.h"
 
+#ifndef MIDITRAIL_LINUX_NATIVE
 using namespace YNBaseLib;
+#endif
 using namespace DirectX;
+
+#ifdef MIDITRAIL_LINUX_NATIVE
+static HRESULT MTCompileShader(const void* data, SIZE_T data_size, const char* filename,
+	const D3D_SHADER_MACRO* defines, ID3DInclude* include, const char* entrypoint,
+	const char* target, UINT flags, UINT effect_flags, ID3DBlob** shader, ID3DBlob** errors)
+{
+	return D3DCompile(data, data_size, filename != NULL ? filename : "MIDITrailMod.hlsl",
+		defines, include, entrypoint, target, flags, effect_flags, shader, errors);
+}
+
+#define D3DCompile MTCompileShader
+#endif
 
 // static pipeline objects
 ID3D11VertexShader*      DXPrimitive11::s_pVS = NULL;
@@ -24,6 +59,7 @@ ID3D11RasterizerState*   DXPrimitive11::s_pRasterNoCull = NULL;
 ID3D11BlendState*        DXPrimitive11::s_pBlend = NULL;
 ID3D11BlendState*        DXPrimitive11::s_pBlendAdd = NULL;
 ID3D11DepthStencilState* DXPrimitive11::s_pDepth = NULL;
+ID3D11DepthStencilState* DXPrimitive11::s_pDepthNoWrite = NULL;
 
 static const char* DXP11_SHADER =
 	"cbuffer Constants : register(b0) {\n"
@@ -79,6 +115,7 @@ DXPrimitive11::DXPrimitive11()
 	m_Additive = false;
 	m_LineTopology = false;
 	m_PointTopology = false;
+	m_DepthWrite = true;
 }
 
 DXPrimitive11::~DXPrimitive11()
@@ -110,14 +147,16 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 	if (pDevice == NULL) return YN_SET_ERR("Program error.", 0, 0);
 
 	UINT flags = 0;
-	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), NULL, NULL, NULL, "VSMain", "vs_4_0", flags, 0, &pVSBlob, &pErr);
+	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), "DXPrimitive11.hlsl", NULL, NULL, "VSMain", "vs_4_0", flags, 0, &pVSBlob, &pErr);
 	if (FAILED(hr) || (pVSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
-	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", flags, 0, &pPSBlob, &pErr);
+	hr = D3DCompile(DXP11_SHADER, strlen(DXP11_SHADER), "DXPrimitive11.hlsl", NULL, NULL, "PSMain", "ps_4_0", flags, 0, &pPSBlob, &pErr);
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &s_pVS);
+	hr = pDevice->CreateVertexShader(
+		MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &s_pPS);
+	hr = pDevice->CreatePixelShader(
+		MTGetD3DBlobBufferPointer(pPSBlob), MTGetD3DBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -127,7 +166,8 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,  0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 		};
-		hr = pDevice->CreateInputLayout(il, 4, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 4,
+			MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -196,18 +236,30 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 		dd.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
 		hr = pDevice->CreateDepthStencilState(&dd, &s_pDepth);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
+		// backdrop variant: still test depth, but do NOT write it, so a fully transparent
+		// primitive (e.g. the grid at alpha 0) can never occlude the notes drawn after it.
+		dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		hr = pDevice->CreateDepthStencilState(&dd, &s_pDepthNoWrite);
+		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
 EXIT:;
-	if (pVSBlob != NULL) pVSBlob->Release();
-	if (pPSBlob != NULL) pPSBlob->Release();
-	if (pErr != NULL) pErr->Release();
+#ifdef MIDITRAIL_LINUX_NATIVE
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
+#else
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
+#endif
 	if (result != 0) ReleasePipeline();
 	return result;
 }
 
 void DXPrimitive11::ReleasePipeline()
 {
+	if (s_pDepthNoWrite != NULL){ s_pDepthNoWrite->Release();s_pDepthNoWrite = NULL; }
 	if (s_pDepth != NULL)       { s_pDepth->Release();       s_pDepth = NULL; }
 	if (s_pBlendAdd != NULL)    { s_pBlendAdd->Release();    s_pBlendAdd = NULL; }
 	if (s_pBlend != NULL)       { s_pBlend->Release();       s_pBlend = NULL; }
@@ -246,7 +298,7 @@ int DXPrimitive11::CreateIndexBuffer(ID3D11Device* pDevice, unsigned long indexN
 	if (m_pIndexBuffer != NULL) { m_pIndexBuffer->Release(); m_pIndexBuffer = NULL; }
 	if (indexNum == 0) { m_IndexNum = 0; return 0; }
 	ZeroMemory(&bd, sizeof(bd));
-	bd.ByteWidth = sizeof(unsigned long) * indexNum;
+	bd.ByteWidth = sizeof(DXP11_INDEX) * indexNum;
 	bd.Usage = D3D11_USAGE_DYNAMIC;
 	bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -266,12 +318,12 @@ int DXPrimitive11::LockVertex(ID3D11DeviceContext* pContext, DXP11_VERTEX** ppVe
 }
 void DXPrimitive11::UnlockVertex(ID3D11DeviceContext* pContext) { pContext->Unmap(m_pVertexBuffer, 0); }
 
-int DXPrimitive11::LockIndex(ID3D11DeviceContext* pContext, unsigned long** ppIndex)
+int DXPrimitive11::LockIndex(ID3D11DeviceContext* pContext, DXP11_INDEX** ppIndex)
 {
 	D3D11_MAPPED_SUBRESOURCE ms;
 	HRESULT hr = pContext->Map(m_pIndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms);
 	if (FAILED(hr)) return YN_SET_ERR("DirectX API error.", hr, 0);
-	*ppIndex = (unsigned long*)ms.pData;
+	*ppIndex = (DXP11_INDEX*)ms.pData;
 	return 0;
 }
 void DXPrimitive11::UnlockIndex(ID3D11DeviceContext* pContext) { pContext->Unmap(m_pIndexBuffer, 0); }
@@ -340,7 +392,7 @@ int DXPrimitive11::Draw(ID3D11DeviceContext* pContext, const XMMATRIX& viewProj,
 	pContext->PSSetShaderResources(0, 1, &m_pSRV);
 	pContext->RSSetState(s_pRasterNoCull);
 	pContext->OMSetBlendState(m_Additive ? s_pBlendAdd : s_pBlend, blendFactor, 0xFFFFFFFF);
-	pContext->OMSetDepthStencilState(s_pDepth, 0);
+	pContext->OMSetDepthStencilState(m_DepthWrite ? s_pDepth : s_pDepthNoWrite, 0);
 
 	if (m_LineTopology || m_PointTopology) {
 		pContext->DrawIndexed(m_IndexNum, 0, 0);

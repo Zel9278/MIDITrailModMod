@@ -102,7 +102,7 @@ public:
 	//世界座標配置移動ベクトル取得
 	virtual D3DXVECTOR3 GetWorldMoveVector();
 
-private:
+protected:
 
 	bool m_isLiveMode;
 	float m_NoteAngleStep;

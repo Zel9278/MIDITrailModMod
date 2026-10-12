@@ -17,7 +17,7 @@ using namespace DirectX;
 
 MTBackgroundImage11::MTBackgroundImage11()
 {
-	m_pSRV = NULL;
+	m_pSRV = nullptr;
 	m_ImgW = 0;
 	m_ImgH = 0;
 	m_Ready = false;
@@ -30,7 +30,7 @@ MTBackgroundImage11::~MTBackgroundImage11()
 
 void MTBackgroundImage11::Release()
 {
-	if (m_pSRV != NULL) { m_pSRV->Release(); m_pSRV = NULL; }
+	if (m_pSRV != nullptr) { m_pSRV->Release(); m_pSRV = nullptr; }
 	m_Prim.Release();
 	m_ImgW = 0;
 	m_ImgH = 0;
@@ -47,11 +47,11 @@ int MTBackgroundImage11::Create(
 	)
 {
 	int result = 0;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 
 	Release();
 
-	if ((pImgFilePath == NULL) || (pImgFilePath[0] == _T('\0'))) return 0;   // disabled
+	if ((pImgFilePath == nullptr) || (pImgFilePath[0] == _T('\0'))) return 0;   // disabled
 
 	result = DXPrimitive11::InitPipeline(pDevice);
 	if (result != 0) goto EXIT;
@@ -83,7 +83,7 @@ EXIT:;
 //******************************************************************************
 int MTBackgroundImage11::DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW, unsigned int screenH)
 {
-	DXP11_VERTEX* pv = NULL;
+	DXP11_VERTEX* pv = nullptr;
 	XMMATRIX ident = XMMatrixIdentity();
 	XMFLOAT4 light(0.0f, 0.0f, 1.0f, 0.0f);
 

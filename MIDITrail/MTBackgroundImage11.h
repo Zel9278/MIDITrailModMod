@@ -29,7 +29,7 @@ public:
 	// draw the letterboxed quad for the current window size (screen space, behind all)
 	int DrawDX11(ID3D11DeviceContext* pContext, unsigned int screenW, unsigned int screenH);
 
-	bool IsReady() { return m_Ready; }
+	bool IsReady() const { return m_Ready; }
 
 private:
 	DXPrimitive11 m_Prim;

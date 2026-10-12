@@ -41,10 +41,15 @@ public:
 
 	//ログ出力先ファイルパス登録
 	int SetLogPath(const WCHAR* pLogPath);
+#ifdef MIDITRAIL_LINUX_NATIVE
+	int SetLogPath(const char* pLogPath);
+#endif
 
 	//標準MIDIファイル読み込み
 	int Load(const TCHAR* pSMFPath, SMSeqData* pMIDIData);
+#ifndef MIDITRAIL_LINUX_NATIVE
 	int LoadW(const wchar_t* pSMFPathW, SMSeqData* pMIDIData);
+#endif
 
 	//Load progress callback (called while parsing SMF events)
 	typedef void (*LoadProgressFunc)(unsigned long current, unsigned long total, void* user);
@@ -56,7 +61,11 @@ private:
 	static LoadProgressFunc s_LoadProgressFunc;
 	static void* s_LoadProgressUser;
 
+#ifdef MIDITRAIL_LINUX_NATIVE
+	int _LoadImpl(const char* pPath, const TCHAR* pNameForLog, SMSeqData* pSeqData);
+#else
 	int _LoadImpl(const wchar_t* pPathW, const TCHAR* pNameForLog, SMSeqData* pSeqData);
+#endif
 
 	//チャンクヘッダ構造
 
@@ -65,7 +74,7 @@ private:
 	//SMFチャンクタイプ
 	typedef struct {
 		unsigned char chunkType[4];		//チャンクタイプ MThd/MTrk
-		unsigned long chunkSize;		//チャンクサイズ
+		unsigned int chunkSize;			//チャンクサイズ（32bit固定：Linux LP64 対策）
 	} SMFChunkTypeSection;
 
 	//SMFチャンクデータ
@@ -78,14 +87,14 @@ private:
 	//RIFFチャンク
 	typedef struct {
 		unsigned char chunkID[4];		//チャンクID
-		unsigned long chunkSize;		//チャンクサイズ
+		unsigned int chunkSize;			//チャンクサイズ（32bit固定：Linux LP64 対策）
 		unsigned char format[4];		//フォーマット
 	} SMFRIFFChunkHeader;
 
 	//RIFFサブチャンク
 	typedef struct {
 		unsigned char chunkID[4];		//チャンクID
-		unsigned long chunkSize;		//チャンクサイズ
+		unsigned int chunkSize;			//チャンクサイズ（32bit固定：Linux LP64 対策）
 	} SMFRIFFSubChunkHeader;
 
 	#pragma pack(pop)
@@ -95,6 +104,9 @@ private:
 	unsigned char m_PrevStatus;
 
 	WCHAR m_LogPath[MAX_PATH];
+#ifdef MIDITRAIL_LINUX_NATIVE
+	char m_LogPathA[MAX_PATH];
+#endif
 	FILE* m_pLogFile;
 	bool m_IsLogOut;
 

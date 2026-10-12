@@ -104,6 +104,9 @@
 #define IDM_VIEW_PIANOROLLRING           32850
 #define IDM_VIEW_SINGLEKEYBOARD          32851
 #define IDM_ENABLE_PITCHBEND_ALLNOTES    32852
+// >>> add ced 20260713: lyrics can be toggled on its own (it used to follow the Ripple toggle)
+#define IDM_ENABLE_LYRICS                32884
+// <<< add ced 20260713
 // >>> add ced 20260627: 1.4.1 colour palette dialogs
 #define IDC_BTN_COLOR_0_1              1032
 #define IDC_BTN_COLOR_0_10             1041
@@ -363,7 +366,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        134
-#define _APS_NEXT_COMMAND_VALUE         32853
+#define _APS_NEXT_COMMAND_VALUE         32885
 #define _APS_NEXT_CONTROL_VALUE         1025
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

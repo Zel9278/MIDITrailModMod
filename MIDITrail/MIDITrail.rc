@@ -87,6 +87,7 @@ BEGIN
         MENUITEM "Single Keyboard",             IDM_VIEW_SINGLEKEYBOARD
         MENUITEM "Piano Keyboard",              IDM_ENABLE_PIANOKEYBOARD
         MENUITEM "Ripple",                      IDM_ENABLE_RIPPLE
+        MENUITEM "Lyrics",                      IDM_ENABLE_LYRICS
         MENUITEM "Pitch Bend Motion",           IDM_ENABLE_PITCHBEND
         MENUITEM "Pitch Bend Whole Channel",    IDM_ENABLE_PITCHBEND_ALLNOTES
         MENUITEM "Stars",                       IDM_ENABLE_STARS

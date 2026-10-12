@@ -9,7 +9,19 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "DXNoteBox11.h"
+#include <math.h>
+#ifdef MIDITRAIL_LINUX_NATIVE
+#ifdef WINAPI
+#undef WINAPI
+#endif
+#define WINAPI __attribute__((ms_abi))
+#endif
 #include <d3dcompiler.h>
+#ifdef MIDITRAIL_LINUX_NATIVE
+#undef WINAPI
+#define WINAPI
+#endif
+#include "Linux/MTLinuxD3DBlob.h"
 
 using namespace YNBaseLib;
 using namespace DirectX;
@@ -44,6 +56,7 @@ struct DXNB11_CONSTANTS {
 	XMFLOAT4    opts;     // x = bend whole channel (0/1); yzw = active-note emissive RGB
 	XMFLOAT4    light;    // xyz = light travel direction (object space), w = diffuse level
 	XMFLOAT4    lamb;     // rgb = ambient term, w = lighting enable (0/1)
+	XMFLOAT4    layer;    // x = NDC depth step per overlap layer, y = pass-1 lift above every layer
 	XMFLOAT4    pb[64];   // per-(port&0xF,ch) pitch-bend Y shift (256 entries)
 };
 
@@ -59,6 +72,7 @@ static const char* DXNB11_SHADER =
 	"  float4 g_Opts;\n"     // x = bend whole channel (0/1)
 	"  float4 g_Light;\n"    // xyz = light travel direction (world space), w = diffuse level
 	"  float4 g_LAmb;\n"     // rgb = ambient term, w = lighting enable (0/1)
+	"  float4 g_Layer;\n"    // x = NDC depth step per overlap layer, y = pass-1 lift
 	"  float4 g_PB[64];\n"   // per-(port&0xF,ch) pitch-bend Y shift, indexed by color.a
 	"};\n"
 	"struct VSIN {\n"
@@ -69,6 +83,7 @@ static const char* DXNB11_SHADER =
 	"  float4 color  : COLOR0;\n"
 	"  float  hidden : TEXCOORD2;\n"
 	"  float  alpha  : TEXCOORD3;\n"   // real note opacity (color.a is the pitch-bend index)
+	"  float  layer  : TEXCOORD4;\n"   // overlap order rank
 	"};\n"
 	"struct VSOUT { float4 pos : SV_POSITION; float4 col : COLOR0; float emph : TEXCOORD0; float aflag : TEXCOORD1; };\n"
 	// Two passes (g_Active.w): pass 0 = the notes that are NOT sounding, at base size;
@@ -83,8 +98,14 @@ static const char* DXNB11_SHADER =
 	"  VSOUT o;\n"
 	"  float apass = g_Active.w;\n"   // 'pass' is an HLSL reserved word
 	"  float active = ((i.vmin.x <= g_Active.x) && (g_Active.x <= i.vmax.x)) ? 1.0 : 0.0;\n"
-	"  float span = max(i.vmax.x - i.vmin.x, 0.000001);\n"
-	"  float prog = saturate((g_Active.x - i.vmin.x) / span);\n"
+	// how far the now-line has passed this note's onset, in world X
+	"  float since = g_Active.x - i.vmin.x;\n"
+	// DX9 decays the flash/swell over a FIXED time (ActiveNoteDuration), carried here as a
+	// world-X distance in g_LAmb.g. A long sustained note therefore flashes only at its
+	// onset and then sits at its base colour, instead of staying half-white for its length.
+	// decay <= 0 (tempo unknown / stopped): flash only at the exact onset.
+	"  float decay = g_LAmb.g;\n"
+	"  float prog = (decay > 0.0) ? saturate(since / decay) : ((since <= 0.0) ? 0.0 : 1.0);\n"
 	"  float emph = (apass >= 0.5) ? active * (1.0 - prog) : 0.0;\n"
 	// a note is drawn by exactly one pass: pass 1 if it is sounding, pass 0 if it is not
 	"  float hide = saturate(i.hidden + abs(apass - active));\n"
@@ -98,6 +119,11 @@ static const char* DXNB11_SHADER =
 	"  float bf = (g_Opts.x >= 0.5) ? 1.0 : (active * ((apass >= 0.5) ? 1.0 : 0.0));\n"   // whole channel vs active-pass-only
 	"  wp.y += bf * g_PB[pbIdx >> 2][pbIdx & 3];\n"   // pitch bend in Y
 	"  o.pos = mul(float4(wp, 1.0), g_WVP);\n"
+	// Overlap order: a higher track (then channel) is drawn on top. Coincident notes
+	// used to be decided by depth rounding noise, so overlaps flickered in blocks and
+	// stripes. Each layer is nudged a few depth-buffer steps toward the camera; the
+	// sounding notes (pass 1) are lifted above every layer.
+	"  o.pos.z -= (i.layer * g_Layer.x + ((apass >= 0.5) ? g_Layer.y : 0.0)) * o.pos.w;\n"
 	// DX9 fixed-function directional lighting (D3DRS_LIGHTING), which the 3D box scene
 	// turns on and the 2D one off. The 3D scene's two lights are exact opposites, so
 	// their combined diffuse term collapses to |dot(n, L)|: faces along the light axis
@@ -109,7 +135,12 @@ static const char* DXNB11_SHADER =
 	"  float3 n = normalize(mul(float4(i.nrm, 0.0), g_World).xyz);\n"
 	"  float3 L = normalize(g_Light.xyz);\n"
 	"  float ndl = saturate(dot(n, -L)) + saturate(dot(n, L));\n"
-	"  float3 lit = saturate(i.color.rgb * (g_Light.w * ndl) + g_LAmb.rgb);\n"
+	// DX9 fixed-function lights the note by its OWN colour: ambient and diffuse are both
+	// reflectances of the vertex colour, so the term stays coloured and only clamps per
+	// channel - it never washes toward white. Adding a grey ambient floor instead (the old
+	// code) makes a bright face bleach to pastel. g_LAmb.r = light ambient (0.2), g_Light.w
+	// = diffuse (1.2). See MTScenePianoRoll3D::_SetLightColor.
+	"  float3 lit = saturate(i.color.rgb * (g_LAmb.r + g_Light.w * ndl));\n"
 	"  o.col = float4(lerp(i.color.rgb, lit, g_LAmb.w), i.alpha);\n"   // carry real opacity to the PS
 	"  o.emph = emph;\n"
 	"  o.aflag = (apass >= 0.5) ? active : 0.0;\n"   // 1 while the note is sounding (pass 1)
@@ -134,14 +165,16 @@ DXNoteBox11::DXNoteBox11()
 	m_pPitchBend = NULL;
 	m_BendAllNotes = false;
 	m_CurTickTime = 0;
+	m_SongTickPerMs = 0.0;
 	m_WorldMove = XMFLOAT3(0.0f, 0.0f, 0.0f);
 	//DX9 MTScenePianoRoll3D light 1 (light 2 is its exact opposite, folded into the shader)
 	m_LightEnable = false;
 	m_LightDir = XMFLOAT3(1.0f, -1.0f, 2.0f);
 	m_LightDiffuse = 1.2f;
-	m_LightAmbient = 0.5f * 0.2f;   // note material ambient * (light1 + light2 ambient)
-	m_pInstanceVB = NULL;
+	m_LightAmbient = 0.2f;   // DX9 light0 ambient (light1 ambient is 0); applied to the note colour
+	m_InstanceVBs.clear();
 	m_AllNoteNum = 0;
+	m_LayerCount = 1;
 	m_pNoteStartTime = NULL;
 	m_pNoteMaxEndTime = NULL;
 	m_pNoteTrackNo = NULL;
@@ -154,7 +187,10 @@ DXNoteBox11::~DXNoteBox11()
 
 void DXNoteBox11::Release()
 {
-	if (m_pInstanceVB != NULL) { m_pInstanceVB->Release(); m_pInstanceVB = NULL; }
+	for (ID3D11Buffer* buffer : m_InstanceVBs) {
+		if (buffer != NULL) buffer->Release();
+	}
+	m_InstanceVBs.clear();
 	if (m_pNoteStartTime != NULL) { delete [] m_pNoteStartTime; m_pNoteStartTime = NULL; }
 	if (m_pNoteMaxEndTime != NULL) { delete [] m_pNoteMaxEndTime; m_pNoteMaxEndTime = NULL; }
 	if (m_pNoteTrackNo != NULL) { delete [] m_pNoteTrackNo; m_pNoteTrackNo = NULL; }
@@ -182,9 +218,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 	hr = D3DCompile(DXNB11_SHADER, strlen(DXNB11_SHADER), NULL, NULL, NULL, "PSMain", "ps_4_0", 0, 0, &pPSBlob, &pErr);
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
-	hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &s_pVS);
+	hr = pDevice->CreateVertexShader(MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
-	hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &s_pPS);
+	hr = pDevice->CreatePixelShader(MTGetD3DBlobBufferPointer(pPSBlob), MTGetD3DBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -197,8 +233,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,  1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 2, DXGI_FORMAT_R32_FLOAT,       1, 28, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 3, DXGI_FORMAT_R32_FLOAT,       1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1 },  // real alpha
+			{ "TEXCOORD", 4, DXGI_FORMAT_R32_FLOAT,       1, 36, D3D11_INPUT_PER_INSTANCE_DATA, 1 },  // overlap layer
 		};
-		hr = pDevice->CreateInputLayout(il, 7, pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 8, MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -223,18 +260,16 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 		static const float corner[8][3] = {
 			{0,0,0},{1,0,0},{0,1,0},{1,1,0},{0,0,1},{1,0,1},{0,1,1},{1,1,1}
 		};
-		// Faces in DX9's MTNoteBox order (top, bottom, right, left, front, back) with DX9's
-		// corner order and normals. The order matters: the scene draws both sides of the box
-		// (D3DCULL_NONE) with blending and depth writing, so which of two overlapping faces
-		// survives the depth test - and which blends over which - follows the submission
-		// order. Corners: L = +Z, R = -Z, U = +Y, D = -Y, s = start X, e = end X.
+		// Faces in DX9's MTNoteBox order (top, bottom, right, left, front, back), each wound
+		// outward-clockwise so back-face culling can drop the far side of the box (see the
+		// rasterizer state below). Corners: bit0 = X, bit1 = Y, bit2 = Z.
 		static const int face[6][4] = {
-			{6,7,2,3},   // top    (sLU,eLU,sRU,eRU)
-			{0,1,4,5},   // bottom (sRD,eRD,sLD,eLD)
-			{2,3,0,1},   // right  (sRU,eRU,sRD,eRD)
-			{4,5,6,7},   // left   (sLD,eLD,sLU,eLU)
-			{6,2,4,0},   // front  (sLU,sRU,sLD,sRD)
-			{3,7,1,5},   // back   (eRU,eLU,eRD,eLD)
+			{2,3,7,6},   // top    (+Y)
+			{0,4,5,1},   // bottom (-Y)
+			{1,3,2,0},   // right  (-Z)
+			{4,6,7,5},   // left   (+Z)
+			{0,2,6,4},   // front  (-X)
+			{1,5,7,3},   // back   (+X)
 		};
 		static const float faceNormal[6][3] = {
 			{0,1,0}, {0,-1,0}, {0,0,-1}, {0,0,1}, {-1,0,0}, {1,0,0}
@@ -260,13 +295,13 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 	}
 
 	{
-		// two triangles per face, over that face's own four vertices. Winding is free
-		// (the scene draws both sides), and the faces are submitted in DX9's order.
+		// two triangles per face, fanned from the quad's first corner so both keep the face's
+		// outward-clockwise winding
 		unsigned short idx[36];
 		for (int f = 0; f < 6; f++) {
 			unsigned short b = (unsigned short)(f * 4);
 			idx[f * 6 + 0] = b + 0; idx[f * 6 + 1] = b + 1; idx[f * 6 + 2] = b + 2;
-			idx[f * 6 + 3] = b + 2; idx[f * 6 + 4] = b + 1; idx[f * 6 + 5] = b + 3;
+			idx[f * 6 + 3] = b + 0; idx[f * 6 + 4] = b + 2; idx[f * 6 + 5] = b + 3;
 		}
 		D3D11_BUFFER_DESC bd;
 		D3D11_SUBRESOURCE_DATA sr;
@@ -284,11 +319,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 		D3D11_RASTERIZER_DESC rd;
 		ZeroMemory(&rd, sizeof(rd));
 		rd.FillMode = D3D11_FILL_SOLID;
-		// no culling, like DX9: the box scene sets D3DRS_CULLMODE = D3DCULL_NONE explicitly
-		// (MTScenePianoRoll3D). Both sides of every box are drawn, and since the notes blend
-		// (D3DRS_ALPHABLENDENABLE = TRUE, conf alpha EE), a note's far face shows through its
-		// near one. That double layer is part of DX9's look - culling makes the notes visibly
-		// lighter and thinner than DX9.
+		// ced 20260714: both sides of the box are drawn, as in DX9 - MTScenePianoRoll3D.cpp
+		// sets D3DRS_CULLMODE to D3DCULL_NONE. The z-buffer (see the depth state below) is what
+		// throws the far faces away, so a note still reads as one lit face.
 		rd.CullMode = D3D11_CULL_NONE;
 		rd.DepthClipEnable = TRUE;
 		rd.MultisampleEnable = TRUE;     // MSAA edge antialiasing
@@ -320,25 +353,22 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 		D3D11_DEPTH_STENCIL_DESC dd;
 		ZeroMemory(&dd, sizeof(dd));
 		dd.DepthEnable = TRUE;
-		// Notes TEST depth (against the keyboard, grid, etc.) but do not WRITE it, so notes
-		// resolve against each other by draw order (the note list is in time order) instead of
-		// by depth. This is a deliberate departure from DX9, which lets the z-buffer sort them:
-		// the Mod's confs can set [Scale] ChStep to (near) zero to stack every channel at the
-		// same depth, and coincident boxes then have equal - or equal-to-within-float-precision
-		// - depth, which the z-buffer cannot order. That produced note-vs-note Z-fighting
-		// between channels. Draw order always gives a stable answer for them.
-		// (ced 20260713: this was briefly switched to depth writing to match DX9; it fought
-		// exactly as described above on confs with ChStep ~ 0, so it is back off.)
-		dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+		// ced 20260714: notes write depth, as in DX9 - MTScenePianoRoll3D never touches
+		// D3DRS_ZWRITEENABLE, so it keeps D3D9's TRUE default. The port used to leave depth
+		// writing off, which let overlapping notes resolve by draw order instead of by depth.
+		// That is only harmless while every note is the same flat colour; the notes are opaque
+		// (the confs use alpha FF), so without a depth write a note drawn later paints straight
+		// over a nearer one that was drawn earlier, and the note field renders inside out.
+		dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
 		dd.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;   // D3D9's D3DCMP_LESSEQUAL default
 		hr = pDevice->CreateDepthStencilState(&dd, &s_pDepth);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
 EXIT:;
-	if (pVSBlob != NULL) pVSBlob->Release();
-	if (pPSBlob != NULL) pPSBlob->Release();
-	if (pErr != NULL) pErr->Release();
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 	if (result != 0) ReleasePipeline();
 	return result;
 }
@@ -388,19 +418,11 @@ int DXNoteBox11::Create(
 	// Keep that split here - the 2D scene must stay flat.
 	m_LightEnable = ((pSceneName != NULL) && (_tcsncmp(pSceneName, _T("PianoRoll3D"), 11) == 0));
 
-	// track color mode keeps each note's source track (lost by GetMergedTrack);
-	// otherwise use the cheaper merged-track path.
-	if (m_NoteDesign.IsTrackColorMode()) {
-		// shared, cached note list + per-note source track (built once, no per-
-		// component re-pairing/sort)
-		result = pSeqData->GetMergedNoteListWithTrack(&pNotes, &pTrackNo);
-		if (result != 0) goto EXIT;
-	}
-	else {
-		// shared, cached merged note list (built once across all components)
-		result = pSeqData->GetMergedNoteList(&pNotes);
-		if (result != 0) goto EXIT;
-	}
+	// shared, cached note list + per-note source track (built once, no per-component
+	// re-pairing/sort). The track is always needed: it is the primary overlap order
+	// (higher track on top), and the track color mode colors by it as well.
+	result = pSeqData->GetMergedNoteListWithTrack(&pNotes, &pTrackNo);
+	if (result != 0) goto EXIT;
 
 	mv = m_NoteDesign.GetWorldMoveVector();
 	m_WorldMove = XMFLOAT3(mv.x, mv.y, mv.z);
@@ -436,6 +458,9 @@ int DXNoteBox11::_CreateInstanceBuffer(
 	D3DXVECTOR3 sc, ec;
 	float bh = 0.0f;
 	float bw = 0.0f;
+	bool flatChannels = false;
+	std::vector<unsigned short> layerKeys;
+	std::vector<bool> layerUsed(65536, false);
 
 	m_AllNoteNum = pNoteList->GetSize();
 	if (m_AllNoteNum == 0) goto EXIT;
@@ -452,6 +477,13 @@ int DXNoteBox11::_CreateInstanceBuffer(
 
 	bh = m_NoteDesign.GetNoteBoxHeight();
 	bw = m_NoteDesign.GetNoteBoxWidth();
+	layerKeys.resize(m_AllNoteNum);
+	// When the 16 channel planes sit closer together than a note is thick (the 2D
+	// scene's ChStep 0.001, or a ChStep tuned near 0), the channel offset is not a
+	// visible arrangement - it only made the depth test pick overlaps by channel
+	// (and by rounding noise). Put those notes on one plane so the overlap layer
+	// decides: higher track on top.
+	flatChannels = (fabsf(m_NoteDesign.GetChStep()) * 15.0f) < ((bw > bh) ? bw : bh);
 
 	for (i = 0; i < m_AllNoteNum; i++) {
 		// loading-screen progress (throttled): keeps the bar moving on black MIDI
@@ -472,6 +504,9 @@ int DXNoteBox11::_CreateInstanceBuffer(
 		unsigned char posPort = m_CollapsePorts ? 0 : note.portNo;
 		sc = m_NoteDesign.GetNoteBoxCenterPosX(note.startTime, posPort, note.chNo, note.noteNo, 0, SM_DEFAULT_PITCHBEND_SENSITIVITY);
 		ec = m_NoteDesign.GetNoteBoxCenterPosX(note.endTime,   posPort, note.chNo, note.noteNo, 0, SM_DEFAULT_PITCHBEND_SENSITIVITY);
+		if (flatChannels) {
+			sc.z = m_NoteDesign.GetNoteBoxCenterPosX(note.startTime, posPort, 0, note.noteNo, 0, SM_DEFAULT_PITCHBEND_SENSITIVITY).z;
+		}
 
 		pInst[i].vmin[0] = sc.x;
 		pInst[i].vmin[1] = sc.y - (bh / 2.0f);
@@ -482,7 +517,7 @@ int DXNoteBox11::_CreateInstanceBuffer(
 		// rgb = note color; alpha byte carries the (port&0xF,ch) index for the
 		// pitch-bend cbuffer lookup (the shader forces output alpha to 1).
 		{
-			unsigned long col = (pTrackNo != NULL)
+			unsigned long col = ((pTrackNo != NULL) && m_NoteDesign.IsTrackColorMode())
 				? (unsigned long)m_NoteDesign.GetTrackChannelColor(pTrackNo[i], note.chNo)
 				: (unsigned long)m_NoteDesign.GetNoteBoxColor(note.portNo, note.chNo, note.noteNo);
 			unsigned long pbIdx = (unsigned long)(((note.portNo & 0x0F) << 4) | (note.chNo & 0x0F));
@@ -492,19 +527,44 @@ int DXNoteBox11::_CreateInstanceBuffer(
 			pInst[i].color = (col & 0x00FFFFFF) | (pbIdx << 24);
 		}
 		pInst[i].hidden  = 0.0f;
+		// overlap key: source track first, then channel (with port)
+		layerKeys[i] = (unsigned short)((((pTrackNo != NULL) ? pTrackNo[i] : 0) << 8)
+		                                | ((note.portNo & 0x0F) << 4) | (note.chNo & 0x0F));
+		layerUsed[layerKeys[i]] = true;
+	}
+
+	// rank only the keys that occur, so the depth nudge stays a few dozen steps deep
+	{
+		std::vector<unsigned short> rank(layerUsed.size(), 0);
+		unsigned long count = 0;
+		for (std::size_t key = 0; key < layerUsed.size(); key++) {
+			if (layerUsed[key]) rank[key] = (unsigned short)count++;
+		}
+		m_LayerCount = (count > 0) ? count : 1;
+		for (i = 0; i < m_AllNoteNum; i++) pInst[i].layer = (float)rank[layerKeys[i]];
 	}
 
 	{
-		D3D11_BUFFER_DESC bd;
-		D3D11_SUBRESOURCE_DATA sr;
-		ZeroMemory(&bd, sizeof(bd));
-		bd.ByteWidth = sizeof(DXNB11_INSTANCE) * m_AllNoteNum;
-		bd.Usage = D3D11_USAGE_IMMUTABLE;
-		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		ZeroMemory(&sr, sizeof(sr));
-		sr.pSysMem = pInst;
-		hr = pDevice->CreateBuffer(&bd, &sr, &m_pInstanceVB);
-		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, m_AllNoteNum); goto EXIT; }
+		const unsigned long chunkSize = 1UL << 20;
+		for (unsigned long first = 0; first < m_AllNoteNum; first += chunkSize) {
+			const unsigned long count = (std::min)(chunkSize, m_AllNoteNum - first);
+			D3D11_BUFFER_DESC bd;
+			D3D11_SUBRESOURCE_DATA sr;
+			ZeroMemory(&bd, sizeof(bd));
+			bd.ByteWidth = sizeof(DXNB11_INSTANCE) * count;
+			bd.Usage = D3D11_USAGE_IMMUTABLE;
+			bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+			ZeroMemory(&sr, sizeof(sr));
+			sr.pSysMem = pInst + first;
+			ID3D11Buffer* buffer = NULL;
+			hr = pDevice->CreateBuffer(&bd, &sr, &buffer);
+			if (FAILED(hr)) {
+				if (buffer != NULL) buffer->Release();
+				result = YN_SET_ERR("DirectX API error.", hr, count);
+				goto EXIT;
+			}
+			m_InstanceVBs.push_back(buffer);
+		}
 	}
 
 EXIT:;
@@ -627,7 +687,7 @@ int DXNoteBox11::DrawDX11(
 	float blendFactor[4] = { 0, 0, 0, 0 };
 
 	if (!m_Ready) return 0;
-	if (m_pInstanceVB == NULL) return 0;
+	if (m_InstanceVBs.empty()) return 0;
 	if (s_pVS == NULL) return YN_SET_ERR("Program error.", 0, 0);
 
 	_GetVisibleNoteRange(&loNote, &hiNote);
@@ -650,10 +710,20 @@ int DXNoteBox11::DrawDX11(
 		// opts.x = bend whole channel; opts.yzw = active-note emissive ([ActiveNote] EmissiveRGBA)
 		D3DXCOLOR emis = m_NoteDesign.GetActiveNoteEmissive();
 		c.opts = XMFLOAT4(m_BendAllNotes ? 1.0f : 0.0f, emis.r, emis.g, emis.b);
+		// active-note flash/swell decay distance in world X. DX9 decays over a fixed time
+		// (ActiveNoteDuration ms since onset), NOT over the note's length. Convert that time
+		// to a world-X span at the current tempo: ms -> ticks (m_SongTickPerMs) -> X (xPerTick).
+		// 0 when the tempo is unknown (stopped) -> the shader flashes onset-only.
+		float xPerTick = m_NoteDesign.GetPlayPosX(1 << 20) / (float)(1 << 20);
+		float decayX = (float)((double)m_NoteDesign.GetActiveNoteDuration() * m_SongTickPerMs) * xPerTick;
 		// world-space light (the shader rotates the normals into world space, as DX9 does)
 		c.light = XMFLOAT4(m_LightDir.x, m_LightDir.y, m_LightDir.z, m_LightDiffuse);
-		c.lamb  = XMFLOAT4(m_LightAmbient, m_LightAmbient, m_LightAmbient,
-				m_LightEnable ? 1.0f : 0.0f);
+		// r = light ambient (colours the note); g = active-flash decay distance (world X);
+		// w = lighting enable
+		c.lamb  = XMFLOAT4(m_LightAmbient, decayX, 0.0f, m_LightEnable ? 1.0f : 0.0f);
+		// overlap layers: 4 D24 steps per layer (well above the interpolation noise)
+		const float layerStep = 4.0f / 16777215.0f;
+		c.layer = XMFLOAT4(layerStep, layerStep * (float)m_LayerCount, 0.0f, 0.0f);
 		// per-(port&0xF,ch) pitch-bend Y shift (active notes bend in pitch)
 		ZeroMemory(c.pb, sizeof(c.pb));
 		if (m_pPitchBend != NULL) {
@@ -671,11 +741,10 @@ int DXNoteBox11::DrawDX11(
 	}
 
 	vbs[0] = s_pTemplateVB;  strides[0] = sizeof(float) * 6;   // corner + face normal
-	vbs[1] = m_pInstanceVB;  strides[1] = sizeof(DXNB11_INSTANCE);
+	vbs[1] = NULL;           strides[1] = sizeof(DXNB11_INSTANCE);
 
 	pContext->IASetInputLayout(s_pLayout);
 	pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
 	pContext->IASetIndexBuffer(s_pBoxIB, DXGI_FORMAT_R16_UINT, 0);
 	pContext->VSSetShader(s_pVS, NULL, 0);
 	pContext->VSSetConstantBuffers(0, 1, &s_pConstBuf);
@@ -705,8 +774,17 @@ int DXNoteBox11::DrawDX11(
 		if (FAILED(hr)) return YN_SET_ERR("DirectX API error.", hr, 0);
 		memcpy(ms.pData, &c, sizeof(c));
 		pContext->Unmap(s_pConstBuf, 0);
-		// one instance per note in the pass range, offset into the instance buffer
-		pContext->DrawIndexedInstanced(36, hi - lo, 0, 0, lo);
+		const unsigned long chunkSize = 1UL << 20;
+		for (unsigned long chunkFirst = (lo / chunkSize) * chunkSize;
+			 chunkFirst < hi; chunkFirst += chunkSize) {
+			const unsigned long drawLo = (std::max)(lo, chunkFirst);
+			const unsigned long drawHi = (std::min)(hi, chunkFirst + chunkSize);
+			if (drawHi <= drawLo) continue;
+			vbs[1] = m_InstanceVBs[chunkFirst / chunkSize];
+			offsets[1] = static_cast<UINT>((drawLo - chunkFirst) * sizeof(DXNB11_INSTANCE));
+			pContext->IASetVertexBuffers(0, 2, vbs, strides, offsets);
+			pContext->DrawIndexedInstanced(36, drawHi - drawLo, 0, 0, 0);
+		}
 	}
 	return 0;
 }

@@ -333,7 +333,7 @@ int MTKeyboardRain11::Create(
 		// per-keyboard GPU buffers + CPU work mirror
 		for (i = 0; i < m_NumKbd; i++) {
 			DXP11_VERTEX* pv = NULL;
-			unsigned long* pi = NULL;
+			DXP11_INDEX* pi = nullptr;
 			result = m_Subs[i].prim.CreateVertexBuffer(pDevice, vn);
 			if (result != 0) goto EXIT;
 			result = m_Subs[i].prim.CreateIndexBuffer(pDevice, in);
@@ -344,7 +344,8 @@ int MTKeyboardRain11::Create(
 			m_Subs[i].prim.UnlockVertex(pContext);
 			result = m_Subs[i].prim.LockIndex(pContext, &pi);
 			if (result != 0) goto EXIT;
-			memcpy(pi, pCpuIB, (size_t)in * sizeof(unsigned long));
+			for (unsigned long index = 0; index < in; index++)
+				pi[index] = static_cast<DXP11_INDEX>(pCpuIB[index]);
 			m_Subs[i].prim.UnlockIndex(pContext);
 			m_Subs[i].prim.SetMaterialAmbient(0.55f, 0.55f, 0.55f);
 

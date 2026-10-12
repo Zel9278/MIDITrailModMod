@@ -51,7 +51,7 @@ int MTTimeIndicator11::Create(
 	DWORD color = 0;
 	float delta = 0.0f;
 	DXP11_VERTEX* pv = NULL;
-	unsigned long* pi = NULL;
+	DXP11_INDEX* pi = nullptr;
 
 	Release();
 

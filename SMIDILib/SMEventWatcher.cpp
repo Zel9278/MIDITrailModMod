@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "SMEventWatcher.h"
 #include <iostream>

@@ -8,9 +8,10 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "MTGamePadCtrl.h"
+#include <cmath>
 
 using namespace YNBaseLib;
 

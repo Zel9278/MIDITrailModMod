@@ -28,6 +28,17 @@ In short: install xmake ( https://xmake.io ) and run `xmake`, OR install vcpkg
 build MIDITrail.sln. ImGui is fetched from the package manager automatically.
 
 ────────────────────────────────────────────────────────
+改造点 20260713：歌詞表示を View メニューから ON/OFF できるようにした
+
+・[NEW][独自] View メニューに「Lyrics」を追加。歌詞イベント（メタイベント 0x05）の表示を
+　単独で有効／無効にできる。
+　→従来は歌詞の表示が「Ripple」トグルに相乗りしており（DX9 の EffectRipple が両方を駆動していた
+　　名残）、波紋を消さないと歌詞を消せなかった。独立したトグルに分離した。
+　状態は他の表示設定と同じく View 設定に保存される（キー名: EnableLyrics、既定 ON）。
+　「Auto save view settings」が有効なら終了時に保存され、次回起動時に復元される。
+　3D / 2D / Ring の各シーンに効く（Rain 系はもともと歌詞非対応）。
+
+────────────────────────────────────────────────────────
 改造点 20260713：3D シーンのノートの陰影（ライティング）を DX9 版と同じに戻した
 
 ・[FIX] PianoRoll 3D / 3D Live：ノートボックスが陰影なし（＝2D シーンと同じ“のっぺり”）で
@@ -44,28 +55,63 @@ build MIDITrail.sln. ImGui is fetched from the package manager automatically.
 　　　まとまる＝ライト軸に沿った面は明るく、直交する面は環境光まで落ちる（＝立体感）。
 　　　シーン名で 3D のときだけ点灯（2D/リングは DX9 同様そのまま無灯＝フラット）。
 　　　ワールド行列のロール回転は、法線ではなくライト側を逆回転させて等価に処理。
+・[FIX] 環境光を「灰色の定数加算」から「ノート色への乗算」に修正（＝DX9 と同じ）。
+　→当初 lit = 色×拡散 + 灰色環境光(0.1) としていたが、これだと明るい面で色が白へ寄り、
+　　ノートが淡いパステルに退色していた。DX9 の固定機能ライティングは環境光も拡散光も
+　　「頂点色（ノート色）の反射率」なので、色 ×(環境光0.2 + 拡散1.2×ndl) となり、明るい面でも
+　　チャンネルごとにクランプされるだけで白飛びしない。単ノートで DX9 の (238,128,128) に対し
+　　DX11 (238,125,125)＝誤差 3/255 まで一致。
 ・[FIX] 発音中ノートを「通常ノート側では非表示」にした（＝DX9 と同じ）。DX9 は発音中、全ノート
 　バッファ側の元ノートを非表示にし(MTNoteBox::_HideNoteBox)、別バッファで膨らませて描き直している。
 　移植版は pass 0（全ノート）でも発音中ノートを描いたまま pass 1 で重ねていたため、同じ位置に
 　箱が 2 個ある二重描画になっていた。1 つのノートは必ずどちらか一方のパスだけで描くようにした。
-・[維持] ノートの深度書き込みは無効のまま（＝DX9 とは意図的に異なる）。DX9 は z バッファで
-　ノート同士の前後を解決するが、本 Mod の conf は [Scale] ChStep をほぼ 0 にして全チャンネルを
-　同一の奥行きに重ねられる。この場合、別チャンネルの同音は「完全に同じ箱」になり深度が同値
-　（あるいは float の分解能以下の差）になるため、z バッファでは前後が決まらず
-　ノート同士の z-fighting になる。深度を書かず描画順（ノートリスト＝時刻順）で解決すれば、
-　同一深度でも常に決定的で安定する。ノートは深度テスト自体は行う（鍵盤やグリッドとの前後は正しい）。
-・[維持] カリングは無効のまま（＝DX9 と同じ）。DX9 のボックス系シーンは既定任せではなく
-　MTScenePianoRoll3D で明示的に D3DRS_CULLMODE=D3DCULL_NONE / D3DRS_ALPHABLENDENABLE=TRUE を
-　設定しており、箱の裏面も描かれる。半透明ノートでは手前の面に奥の面が透けて重なる二層になり、
-　これが DX9 の見た目そのもの（背面カリングを入れると DX9 より明るく・薄くなってしまう）。
-　面の描画順も DX9 の頂点バッファと同じ 上→下→右→左→前→後 に合わせた（深度書き込み＋ブレンド下では
-　重なる面のどちらが残り、どちらに重なるかが送信順で決まるため）。
+・[FIX] 発音中の白フラッシュ／膨らみの減衰を「発音開始からの固定時間(ActiveNoteDuration)」に
+　修正（＝DX9 と同じ）。従来はフラッシュ量 emph を「ノート長で正規化」していたため、長いノートは
+　発音中ずっと半分白いまま＝2D/3D とも面が白っぽく退色していた。DX9 は GetActiveNoteColor が
+　発音開始からの経過 ms で rate = 1 - 経過/Duration と減衰させるので、長いノートでも冒頭で一瞬
+　光ってすぐ元の色に戻る。現在テンポ(TimeDivision×BPM/60000)からフラッシュ減衰距離をワールド X に
+　換算してシェーダへ渡し、DX9 と同じ挙動にした。
+・[FIX] グリッド（格子線）が深度を書かないようにした。グリッドはノートより先に描く背景の目安
+　なのに深度を書いていたため、透明なグリッド（conf の GridLineRGBA アルファ 00＝不可視）でも
+　深度だけ残り、グリッド線と交差するノートに「見えない切り欠き（破線状の隙間）」を作っていた。
+　DXPrimitive11 に深度書き込みトグル(SetDepthWrite)を追加し、グリッドは深度テストのみ・書き込み
+　なしにした。背景として最初に描かれ、鍵盤・ボード・ノートが後からその上に描かれるので前後は不変。
+　（実機 A/B：グリッド深度書き込み ON では横方向のノートが切り欠かれ、OFF では連続して描かれる。）
+・[FIX] チャンネルごとに極小の深度オフセットを与え、ノート同士の z-fighting を解消した。
+　→ノート箱は奥行き 0.1 に対しチャンネル間隔は ChStep（約 0.01）しかないため、別チャンネルの箱同士が
+　　めり込む。面が拮抗深度で交差する所は画素ごとに前後が反転する＝黒 MIDI の斑。投影後の深度に
+　　pbIdx(port×16+ch)×5e-6×w を加え、チャンネルを深度バッファ上だけで確実に順序付けした。
+　　オフセットは D24 で数百レベル＝1 画素にも満たず見た目は不変、鍵盤・ボードとの前後も不変。
+　　（実測：この対策の前でも DX11 は DX9 の約 1/12 しか縞が出ていない。DX11 は深度 D24、DX9 は D16
+　　なので元々 DX11 の方が精度が高い。本対策でさらに減る。）
+・[FIX] ノートの深度書き込みを有効に戻した（＝DX9 と同じ）。カリングも DX9 と同じ両面描画
+　（D3DCULL_NONE）のまま。
+　→移植版はノートの深度書き込みを切っており、重なったノートを深度ではなく描画順で解決していた。
+　　これはノートが無灯＝全ての面が同じ色だった頃は無害だったが、conf のノート色はアルファ FF
+　　＝不透明なので、深度を書かないと「後から描いた奥のノートが、先に描いた手前のノートを
+　　塗りつぶす」ことになり、ノート面が裏返って描かれる。黒 MIDI のような密な譜面では、面が
+　　破線・網目状に崩れて見える。これを z-fighting と誤診し、深度書き込みを切ったままにしていたのが
+　　このバグの正体だった（斑の原因は z-fighting ではなく描画順の破綻）。
+　　DX9 は MTScenePianoRoll3D で D3DRS_ZWRITEENABLE に一切触れていない＝D3D9 の既定 TRUE のまま。
+　　深度を書けば箱の裏面は z バッファに落ちるので、両面描画でもノートは「陰影の付いた面 1 枚」に
+　　見える。DX9 と同じ挙動に戻した。
+　面の送信順は DX9 の頂点バッファと同じ 上→下→右→左→前→後 のまま。
 ・[FIX] DXPrimitive11：DX9 の D3DRS_LIGHTING 相当のシーン単位ライティング ON/OFF を追加
 　(SetLightEnable)。既定は ON なので鍵盤等の見た目は不変。2D Live のノートだけ DX9 と同じく無灯に。
 ・[参考] Rain 系は DX9 でもノートが板ポリ（法線 +Y の 1 枚）で、ライト計算の結果が 1.0 に飽和する
 　（拡散 0.87 + 環境光 0.25）ため実質フラット。よって DX11 の現状（無灯）と一致しており変更不要。
 ・[検証] DX9 版(1.4.1)を実際にビルドし、同じ MIDI・同じ視点で描画して画素値を突き合わせた。
 　修正後は 4 ch すべての明面・暗面が DX9 と完全一致（例：赤 暗面(133,76,76) 明面(238,128,128)）。
+
+────────────────────────────────────────────────────────
+Mod 20260713: lyrics can be switched on and off from the View menu
+
+* [NEW][original] Added "Lyrics" to the View menu, which enables/disables the display of the
+  lyrics meta events (0x05) on its own. It used to ride on the "Ripple" toggle (a leftover from
+  DX9, where EffectRipple drove both), so you could not turn the lyrics off without also losing
+  the ripples. The setting is stored with the other view settings (key: EnableLyrics, default on)
+  and, with "Auto save view settings" enabled, is restored on the next run. It applies to the
+  3D / 2D / Ring scenes (the rain scenes never had lyrics).
 
 ────────────────────────────────────────────────────────
 Mod 20260713: 3D scene note shading restored to match DX9
@@ -84,24 +130,51 @@ Mod 20260713: 3D scene note shading restored to match DX9
   bright, faces across it fall to the ambient floor - the 3D relief is back. Lighting is enabled
   by scene name, so the 2D and ring scenes stay flat exactly as in DX9. The world matrix's roll
   is handled by rotating the light the other way instead of the normals.
+* [FIX] Ambient light MULTIPLIES the note colour instead of being added as a grey constant (as in
+  DX9). The first cut computed lit = colour*diffuse + grey_ambient(0.1), which bleaches a bright
+  face toward white and left the notes a washed-out pastel. DX9's fixed-function lighting treats
+  both ambient and diffuse as reflectances of the vertex (note) colour, so lit = colour*(ambient
+  0.2 + diffuse 1.2*ndl): a bright face just clamps per channel and keeps its hue, never washing
+  out. A single note now reads DX11 (238,125,125) against DX9 (238,128,128) - within 3/255.
 * [FIX] A sounding note is now hidden from the normal-note pass, as in DX9 (MTNoteBox::_HideNoteBox
   blanks the original note in the all-notes buffer for as long as it sounds, and the swollen copy
   is drawn from a separate buffer). The port drew the note in BOTH passes, leaving two coincident
   boxes. Each note is now drawn by exactly one of the two passes.
-* [KEPT] Notes still do not WRITE depth - a deliberate departure from DX9. DX9 lets the z-buffer
-  order the notes against each other, but this Mod's confs can set [Scale] ChStep to (near) zero
-  to stack every channel at the same depth. The same note on two channels is then literally the
-  same box, with equal depth - or depth equal to within float precision - which the z-buffer
-  cannot order, so the notes Z-fight with each other. Resolving them by draw order (the note list
-  is in time order) is always stable. Notes still TEST depth, so they sit correctly against the
-  keyboard and the grid.
-* [KEPT] Culling stays off, as in DX9. The box scenes do not run on the default here: DX9's
-  MTScenePianoRoll3D explicitly sets D3DRS_CULLMODE = D3DCULL_NONE and D3DRS_ALPHABLENDENABLE =
-  TRUE, so both sides of every box are drawn and, with translucent notes, a box's far face shows
-  through its near one. That double layer IS DX9's look - back-face culling makes the notes
-  lighter and thinner than DX9. The six faces are submitted in DX9's vertex-buffer order (top,
-  bottom, right, left, front, back), because with depth writing and blending the submission order
-  decides which of two overlapping faces survives and which blends over which.
+* [FIX] The active-note white flash / swell decays over a FIXED time (ActiveNoteDuration ms from
+  onset), as in DX9 - not over the note's length. The flash amount emph used to be normalised by
+  the note's span, so a long sustained note stayed half-white for its whole duration, bleaching
+  the note field in both 2D and 3D. DX9's GetActiveNoteColor decays rate = 1 - elapsed/Duration
+  by elapsed ms since onset, so even a long note flashes only at its start and then returns to its
+  base colour. The flash decay distance is converted to world X from the current tempo
+  (TimeDivision*BPM/60000) and passed to the shader.
+* [FIX] The grid no longer writes depth. The grid is a backdrop reference drawn before the notes,
+  but it was writing depth, so a fully transparent grid (conf GridLineRGBA alpha 00 = invisible)
+  still left depth behind and punched invisible notches - a dashed-gap look - into the notes that
+  crossed it. DXPrimitive11 got a depth-write toggle (SetDepthWrite); the grid now tests depth but
+  does not write it. It still draws first as a backdrop, with the keyboard / board / notes over it,
+  so front-to-back ordering is unchanged. (On-device A/B: with the grid writing depth the horizontal
+  notes are notched; with it off they draw continuously.)
+* [FIX] Each channel gets a tiny depth offset to kill note-vs-note z-fighting. A note box is 0.1
+  deep while channels are only ChStep (~0.01) apart, so different channels' boxes interpenetrate;
+  where their faces cross at near-equal depth the test flips pixel to pixel (the speckle on dense /
+  black MIDI). The clip-space depth gets pbIdx(port*16+ch)*5e-6*w added, so the depth buffer orders
+  channels deterministically. The offset is a few hundred D24 levels - under one pixel of motion,
+  invisible, and far below the depth gap to the keyboard / board, so real ordering is untouched.
+  (Measured: even before this, DX11 showed ~12x less speckle than DX9 - DX11's depth buffer is D24
+  vs DX9's D16, so it was already more precise; this reduces it further.)
+* [FIX] Notes WRITE depth again, as in DX9. Culling stays as in DX9 too: both sides of the box are
+  drawn (D3DCULL_NONE).
+  The port had turned depth writing off, so overlapping notes resolved by draw order instead of by
+  depth. That is harmless only while the notes are unlit and every face is the same flat colour.
+  The note colours in the confs are opaque (alpha FF), so with no depth write a note drawn later
+  paints straight over a nearer note drawn earlier, and the note field renders inside out - on dense
+  (black MIDI) material the note faces break up into dashes and hatching. That artifact was
+  misdiagnosed as Z-fighting, and leaving depth writing off to "avoid the Z-fighting" is what kept
+  it alive: the speckle was never depth precision, it was the draw order collapsing.
+  DX9 never touches D3DRS_ZWRITEENABLE in MTScenePianoRoll3D, so it keeps D3D9's TRUE default. With
+  the depth write back on, the z-buffer rejects the far faces of each box, so even with both sides
+  drawn a note reads as one lit face - exactly as in DX9.
+  The six faces are still submitted in DX9's order (top, bottom, right, left, front, back).
 * [FIX] DXPrimitive11: added a per-scene lighting switch (SetLightEnable), the equivalent of
   DX9's D3DRS_LIGHTING. It defaults to on, so the keyboard and the other lit objects are
   unchanged; only the 2D live notes go unlit, as they are in DX9.

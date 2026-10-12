@@ -68,7 +68,7 @@ using namespace SMIDILib;
 //メニュースタイル制御
 //TAG:シーン追加
 // >>> modify 20191219 yossiepon begin
-#define MT_MENU_NUM        (39)
+#define MT_MENU_NUM        (40)
 // <<< modify 20191219 yossiepon end
 
 #define MT_PLAYSTATUS_NUM  (6)
@@ -262,6 +262,7 @@ private:
 	bool m_isEnablePianoKeyboard;
 	bool m_IsSingleKeyboard11;  // M4.6c: DX11 box keyboard - single (default) vs per-port
 	bool m_isEnableRipple;
+	bool m_isEnableLyrics;   // ced 20260713: lyrics toggle (used to follow m_isEnableRipple)
 	bool m_isEnablePitchBend;
 	bool m_isEnablePitchBendAllNotes;  // M4.22: bend the whole channel, not just sounding notes
 	bool m_isEnableStars;

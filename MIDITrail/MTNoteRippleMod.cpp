@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "MTNoteRippleMod.h"
 #include "MTNoteDesignRing.h"
@@ -185,6 +185,8 @@ int MTNoteRippleMod::UpdateCPU(D3DXVECTOR3 camVector, void* pVertexBuf, unsigned
 		SMNote note;
 		if (m_NoteListRT.GetNote(m_pNoteStatusMod[i].index, &note) != 0) continue;
 		if ((note.portNo < MTNOTERIPPLE_MAX_PORT_NUM)
+		 && (note.chNo < SM_MAX_CH_NUM)
+		 && (note.noteNo < SM_MAX_NOTE_NUM)
 		 && (m_KeyDownRate[note.portNo][note.chNo][note.noteNo] < m_pNoteStatusMod[i].keyDownRate)) {
 			for (j = 0; j < overwriteTimes; j++) {
 				_SetVertexPosition(&(pVertex[activeNoteNum*6]), note, &(m_pNoteStatusMod[i]), i);
@@ -296,15 +298,27 @@ int MTNoteRippleMod::_UpdateStatusOfRipple(
 			}
 			//空いているところに追加する
 			if (!isFound) {
+				bool isRegistered = false;
 				for (i = 0; i < MTNOTERIPPLE_MAX_RIPPLE_NUM; i++) {
 					if (!(m_pNoteStatusMod[i].isActive)) {
 						m_pNoteStatusMod[i].isActive = true;
 						m_pNoteStatusMod[i].keyStatus = BeforeNoteON;
 						m_pNoteStatusMod[i].index = m_CurNoteIndex;
 						m_pNoteStatusMod[i].keyDownRate = 0.0f;
+						isRegistered = true;
 						break;
 					}
 				}
+				if (!isRegistered) {
+					m_CurNoteIndex++;
+					continue;
+				}
+			}
+			if (note.portNo >= MTNOTERIPPLE_MAX_PORT_NUM
+					|| note.chNo >= SM_MAX_CH_NUM
+					|| note.noteNo >= SM_MAX_NOTE_NUM) {
+				m_CurNoteIndex++;
+				continue;
 			}
 			//発音中ノート状態更新
 			result = _UpdateNoteStatus(
@@ -335,6 +349,10 @@ int MTNoteRippleMod::_UpdateNoteStatus(
 	)
 {
 	int result= 0;
+	unsigned long noteLen = note.endTime - note.startTime;
+	float decayRatio = 0.3f;
+	float sustainRatio = 0.4f;
+	float releaseRatio = 0.3f;
 
 	//発音終了ノート
 	if(playTimeMSec > note.endTime) {
@@ -346,12 +364,6 @@ int MTNoteRippleMod::_UpdateNoteStatus(
 
 		goto EXIT;
 	}
-
-	unsigned long noteLen = note.endTime - note.startTime;
-
-	float decayRatio = 0.3f;
-	float sustainRatio = 0.4f;
-	float releaseRatio = 0.3f;
 
 	//波紋ディケイ時間が発音長より長い場合、ディケイを消音時間までに修正する
 	if(noteLen < decayDuration) {
@@ -436,6 +448,7 @@ int MTNoteRippleMod::_UpdateVertexOfRipple(
 	unsigned long i = 0;
 	unsigned long j = 0;
 	unsigned long activeNoteNum = 0;
+	unsigned long overwriteTimes = m_NoteDesignMod.GetRippleOverwriteTimes();
 	bool isTimeout = false;
 
 	if (pD3DDevice == NULL) {
@@ -450,8 +463,6 @@ int MTNoteRippleMod::_UpdateVertexOfRipple(
 	ZeroMemory(m_KeyDownRate, sizeof(float) * MTNOTERIPPLE_MAX_PORT_NUM * SM_MAX_CH_NUM * SM_MAX_NOTE_NUM);
 
 	// 波紋上書き回数
-	unsigned long overwriteTimes = m_NoteDesignMod.GetRippleOverwriteTimes();
-
 	//発音中ノートの波紋について頂点を更新
 	for (i = 0; i < MTNOTERIPPLE_MAX_RIPPLE_NUM; i++) {
 		if (m_pNoteStatusMod[i].isActive) {

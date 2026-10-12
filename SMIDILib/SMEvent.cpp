@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "SMEvent.h"
 #include <new>
@@ -283,7 +283,11 @@ void SMEvent::Dump()
 		strcat_s(buf, "...");
 	}
 	strcat_s(buf, "]\n");
+	#ifdef MIDITRAIL_LINUX_NATIVE
+	std::fputs(buf, stderr);
+	#else
 	OutputDebugStringA(buf);
+	#endif
 #endif
 }
 // <<< add 20251101 yossiepon end

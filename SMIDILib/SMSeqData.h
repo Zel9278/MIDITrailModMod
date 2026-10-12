@@ -113,6 +113,8 @@ public:
 	//トータル演奏時間取得
 	unsigned long GetTotalPlayTime();
 
+	unsigned long GetTickTimeAtPlayTime(unsigned long playTimeMsec, double* pTickPerMsec);
+
 	//テンポ取得
 	unsigned long GetTempo();
 

@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "resource.h"
 #include "YNBaseLib.h"
 #include "DXColorUtil.h"

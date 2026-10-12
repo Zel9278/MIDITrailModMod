@@ -62,14 +62,14 @@ public:
 
 private:
 
-	// per-note instance record (24 B): box = (cx, yStart, yEnd, z), halfW, color
+	// per-note instance record: box = (cx, yStart, yEnd, z), halfW, color
 	struct DXNR11_INSTANCE {
 		float cx;
 		float yStart;
 		float yEnd;
 		float z;
 		float halfW;
-		unsigned long color;   // D3DCOLOR 0xAARRGGBB (read as B8G8R8A8_UNORM)
+		float color[4];        // RGB note color; alpha stores the pitch-bend index
 	};
 
 	MTNoteDesign m_NoteDesign;

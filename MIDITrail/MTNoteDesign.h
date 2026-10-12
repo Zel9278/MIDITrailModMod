@@ -207,6 +207,8 @@ public:
 	// ([ActiveNote] WhiteRate) - read by the DX11 box renderer
 	float GetActiveNoteBoxSizeRatio();
 	float GetActiveNoteWhiteRate();
+	// active-note release time in ms ([ActiveNote] Duration); the swell/flash decays over it
+	int GetActiveNoteDuration() { return m_ActiveNoteDuration; }
 
 	//グリッドラインカラー取得
 	D3DXCOLOR GetGridLineColor();
