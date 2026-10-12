@@ -1,12 +1,15 @@
 name: Build & Package
 
-# mod_mod/main : build, package and publish a runnable zip release.
-# mod_mod/dev  : build only (CI check, no packaging / release).
+# mod_mod/main : build, package and publish a runnable zip release (Windows zip +
+#                Linux tar.gz attached to the same release).
+# mod_mod/dev, mod/dev/linux_support : build only (CI check; the Linux package is
+#                kept as a workflow artifact for testing).
 on:
   push:
     branches:
       - mod_mod/main
       - mod_mod/dev
+      - mod/dev/linux_support
   workflow_dispatch:
 
 permissions:
@@ -15,6 +18,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -93,3 +98,50 @@ jobs:
           name: ${{ steps.meta.outputs.title }}
           body_path: release_body.txt
           files: dist/MIDITrail-mod_mod.zip
+
+  # Linux (SDL3 + DXVK Native): built in a Fedora container, which packages SDL3,
+  # dxvk-native and vkd3d. The tarball bundles DXVK Native / vkd3d next to the binary.
+  build-linux:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+      - name: Install git
+        run: dnf install -y git tar zstd
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.xmake
+          key: xmake-linux-${{ hashFiles('xmake.lua') }}
+          restore-keys: xmake-linux-
+
+      - name: Build and package
+        run: bash .github/scripts/build-linux.sh
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MIDITrail-mod_mod-linux-x86_64
+          path: dist/MIDITrail-mod_mod-linux-x86_64.tar.gz
+
+  # attach the Linux package to the release the Windows job published
+  release-linux:
+    if: github.ref == 'refs/heads/mod_mod/main'
+    needs: [build, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: MIDITrail-mod_mod-linux-x86_64
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          files: MIDITrail-mod_mod-linux-x86_64.tar.gz

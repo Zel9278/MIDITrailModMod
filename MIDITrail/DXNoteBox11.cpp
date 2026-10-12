@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "YNBaseLib.h"
 #include "DXNoteBox11.h"
+#include <math.h>
 #ifdef MIDITRAIL_LINUX_NATIVE
 #ifdef WINAPI
 #undef WINAPI
@@ -55,6 +56,7 @@ struct DXNB11_CONSTANTS {
 	XMFLOAT4    opts;     // x = bend whole channel (0/1); yzw = active-note emissive RGB
 	XMFLOAT4    light;    // xyz = light travel direction (object space), w = diffuse level
 	XMFLOAT4    lamb;     // rgb = ambient term, w = lighting enable (0/1)
+	XMFLOAT4    layer;    // x = NDC depth step per overlap layer, y = pass-1 lift above every layer
 	XMFLOAT4    pb[64];   // per-(port&0xF,ch) pitch-bend Y shift (256 entries)
 };
 
@@ -70,6 +72,7 @@ static const char* DXNB11_SHADER =
 	"  float4 g_Opts;\n"     // x = bend whole channel (0/1)
 	"  float4 g_Light;\n"    // xyz = light travel direction (world space), w = diffuse level
 	"  float4 g_LAmb;\n"     // rgb = ambient term, w = lighting enable (0/1)
+	"  float4 g_Layer;\n"    // x = NDC depth step per overlap layer, y = pass-1 lift
 	"  float4 g_PB[64];\n"   // per-(port&0xF,ch) pitch-bend Y shift, indexed by color.a
 	"};\n"
 	"struct VSIN {\n"
@@ -80,6 +83,7 @@ static const char* DXNB11_SHADER =
 	"  float4 color  : COLOR0;\n"
 	"  float  hidden : TEXCOORD2;\n"
 	"  float  alpha  : TEXCOORD3;\n"   // real note opacity (color.a is the pitch-bend index)
+	"  float  layer  : TEXCOORD4;\n"   // overlap order rank
 	"};\n"
 	"struct VSOUT { float4 pos : SV_POSITION; float4 col : COLOR0; float emph : TEXCOORD0; float aflag : TEXCOORD1; };\n"
 	// Two passes (g_Active.w): pass 0 = the notes that are NOT sounding, at base size;
@@ -115,6 +119,11 @@ static const char* DXNB11_SHADER =
 	"  float bf = (g_Opts.x >= 0.5) ? 1.0 : (active * ((apass >= 0.5) ? 1.0 : 0.0));\n"   // whole channel vs active-pass-only
 	"  wp.y += bf * g_PB[pbIdx >> 2][pbIdx & 3];\n"   // pitch bend in Y
 	"  o.pos = mul(float4(wp, 1.0), g_WVP);\n"
+	// Overlap order: a higher track (then channel) is drawn on top. Coincident notes
+	// used to be decided by depth rounding noise, so overlaps flickered in blocks and
+	// stripes. Each layer is nudged a few depth-buffer steps toward the camera; the
+	// sounding notes (pass 1) are lifted above every layer.
+	"  o.pos.z -= (i.layer * g_Layer.x + ((apass >= 0.5) ? g_Layer.y : 0.0)) * o.pos.w;\n"
 	// DX9 fixed-function directional lighting (D3DRS_LIGHTING), which the 3D box scene
 	// turns on and the 2D one off. The 3D scene's two lights are exact opposites, so
 	// their combined diffuse term collapses to |dot(n, L)|: faces along the light axis
@@ -165,6 +174,7 @@ DXNoteBox11::DXNoteBox11()
 	m_LightAmbient = 0.2f;   // DX9 light0 ambient (light1 ambient is 0); applied to the note colour
 	m_InstanceVBs.clear();
 	m_AllNoteNum = 0;
+	m_LayerCount = 1;
 	m_pNoteStartTime = NULL;
 	m_pNoteMaxEndTime = NULL;
 	m_pNoteTrackNo = NULL;
@@ -223,8 +233,9 @@ int DXNoteBox11::InitPipeline(ID3D11Device* pDevice)
 			{ "COLOR",    0, DXGI_FORMAT_B8G8R8A8_UNORM,  1, 24, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 2, DXGI_FORMAT_R32_FLOAT,       1, 28, D3D11_INPUT_PER_INSTANCE_DATA, 1 },
 			{ "TEXCOORD", 3, DXGI_FORMAT_R32_FLOAT,       1, 32, D3D11_INPUT_PER_INSTANCE_DATA, 1 },  // real alpha
+			{ "TEXCOORD", 4, DXGI_FORMAT_R32_FLOAT,       1, 36, D3D11_INPUT_PER_INSTANCE_DATA, 1 },  // overlap layer
 		};
-		hr = pDevice->CreateInputLayout(il, 7, MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
+		hr = pDevice->CreateInputLayout(il, 8, MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -407,19 +418,11 @@ int DXNoteBox11::Create(
 	// Keep that split here - the 2D scene must stay flat.
 	m_LightEnable = ((pSceneName != NULL) && (_tcsncmp(pSceneName, _T("PianoRoll3D"), 11) == 0));
 
-	// track color mode keeps each note's source track (lost by GetMergedTrack);
-	// otherwise use the cheaper merged-track path.
-	if (m_NoteDesign.IsTrackColorMode()) {
-		// shared, cached note list + per-note source track (built once, no per-
-		// component re-pairing/sort)
-		result = pSeqData->GetMergedNoteListWithTrack(&pNotes, &pTrackNo);
-		if (result != 0) goto EXIT;
-	}
-	else {
-		// shared, cached merged note list (built once across all components)
-		result = pSeqData->GetMergedNoteList(&pNotes);
-		if (result != 0) goto EXIT;
-	}
+	// shared, cached note list + per-note source track (built once, no per-component
+	// re-pairing/sort). The track is always needed: it is the primary overlap order
+	// (higher track on top), and the track color mode colors by it as well.
+	result = pSeqData->GetMergedNoteListWithTrack(&pNotes, &pTrackNo);
+	if (result != 0) goto EXIT;
 
 	mv = m_NoteDesign.GetWorldMoveVector();
 	m_WorldMove = XMFLOAT3(mv.x, mv.y, mv.z);
@@ -455,6 +458,9 @@ int DXNoteBox11::_CreateInstanceBuffer(
 	D3DXVECTOR3 sc, ec;
 	float bh = 0.0f;
 	float bw = 0.0f;
+	bool flatChannels = false;
+	std::vector<unsigned short> layerKeys;
+	std::vector<bool> layerUsed(65536, false);
 
 	m_AllNoteNum = pNoteList->GetSize();
 	if (m_AllNoteNum == 0) goto EXIT;
@@ -471,6 +477,13 @@ int DXNoteBox11::_CreateInstanceBuffer(
 
 	bh = m_NoteDesign.GetNoteBoxHeight();
 	bw = m_NoteDesign.GetNoteBoxWidth();
+	layerKeys.resize(m_AllNoteNum);
+	// When the 16 channel planes sit closer together than a note is thick (the 2D
+	// scene's ChStep 0.001, or a ChStep tuned near 0), the channel offset is not a
+	// visible arrangement - it only made the depth test pick overlaps by channel
+	// (and by rounding noise). Put those notes on one plane so the overlap layer
+	// decides: higher track on top.
+	flatChannels = (fabsf(m_NoteDesign.GetChStep()) * 15.0f) < ((bw > bh) ? bw : bh);
 
 	for (i = 0; i < m_AllNoteNum; i++) {
 		// loading-screen progress (throttled): keeps the bar moving on black MIDI
@@ -491,6 +504,9 @@ int DXNoteBox11::_CreateInstanceBuffer(
 		unsigned char posPort = m_CollapsePorts ? 0 : note.portNo;
 		sc = m_NoteDesign.GetNoteBoxCenterPosX(note.startTime, posPort, note.chNo, note.noteNo, 0, SM_DEFAULT_PITCHBEND_SENSITIVITY);
 		ec = m_NoteDesign.GetNoteBoxCenterPosX(note.endTime,   posPort, note.chNo, note.noteNo, 0, SM_DEFAULT_PITCHBEND_SENSITIVITY);
+		if (flatChannels) {
+			sc.z = m_NoteDesign.GetNoteBoxCenterPosX(note.startTime, posPort, 0, note.noteNo, 0, SM_DEFAULT_PITCHBEND_SENSITIVITY).z;
+		}
 
 		pInst[i].vmin[0] = sc.x;
 		pInst[i].vmin[1] = sc.y - (bh / 2.0f);
@@ -501,7 +517,7 @@ int DXNoteBox11::_CreateInstanceBuffer(
 		// rgb = note color; alpha byte carries the (port&0xF,ch) index for the
 		// pitch-bend cbuffer lookup (the shader forces output alpha to 1).
 		{
-			unsigned long col = (pTrackNo != NULL)
+			unsigned long col = ((pTrackNo != NULL) && m_NoteDesign.IsTrackColorMode())
 				? (unsigned long)m_NoteDesign.GetTrackChannelColor(pTrackNo[i], note.chNo)
 				: (unsigned long)m_NoteDesign.GetNoteBoxColor(note.portNo, note.chNo, note.noteNo);
 			unsigned long pbIdx = (unsigned long)(((note.portNo & 0x0F) << 4) | (note.chNo & 0x0F));
@@ -511,6 +527,21 @@ int DXNoteBox11::_CreateInstanceBuffer(
 			pInst[i].color = (col & 0x00FFFFFF) | (pbIdx << 24);
 		}
 		pInst[i].hidden  = 0.0f;
+		// overlap key: source track first, then channel (with port)
+		layerKeys[i] = (unsigned short)((((pTrackNo != NULL) ? pTrackNo[i] : 0) << 8)
+		                                | ((note.portNo & 0x0F) << 4) | (note.chNo & 0x0F));
+		layerUsed[layerKeys[i]] = true;
+	}
+
+	// rank only the keys that occur, so the depth nudge stays a few dozen steps deep
+	{
+		std::vector<unsigned short> rank(layerUsed.size(), 0);
+		unsigned long count = 0;
+		for (std::size_t key = 0; key < layerUsed.size(); key++) {
+			if (layerUsed[key]) rank[key] = (unsigned short)count++;
+		}
+		m_LayerCount = (count > 0) ? count : 1;
+		for (i = 0; i < m_AllNoteNum; i++) pInst[i].layer = (float)rank[layerKeys[i]];
 	}
 
 	{
@@ -690,6 +721,9 @@ int DXNoteBox11::DrawDX11(
 		// r = light ambient (colours the note); g = active-flash decay distance (world X);
 		// w = lighting enable
 		c.lamb  = XMFLOAT4(m_LightAmbient, decayX, 0.0f, m_LightEnable ? 1.0f : 0.0f);
+		// overlap layers: 4 D24 steps per layer (well above the interpolation noise)
+		const float layerStep = 4.0f / 16777215.0f;
+		c.layer = XMFLOAT4(layerStep, layerStep * (float)m_LayerCount, 0.0f, 0.0f);
 		// per-(port&0xF,ch) pitch-bend Y shift (active notes bend in pitch)
 		ZeroMemory(c.pb, sizeof(c.pb));
 		if (m_pPitchBend != NULL) {

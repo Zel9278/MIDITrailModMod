@@ -20,6 +20,7 @@ public:
     void all_notes_off();
     bool ready() const { return initialized_; }
     const std::string& last_error() const { return last_error_; }
+    const std::string& library_path() const { return library_path_; }
     unsigned long sent_event_count() const { return sent_event_count_; }
 
 private:
@@ -42,6 +43,7 @@ private:
     void* library_ = nullptr;
     bool initialized_ = false;
     std::string last_error_;
+    std::string library_path_;
     unsigned long sent_event_count_ = 0;
     SendDirectDataFn send_direct_data_ = nullptr;
     SendDirectLongDataFn send_direct_long_data_ = nullptr;

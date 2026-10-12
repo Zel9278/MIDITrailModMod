@@ -1,6 +1,9 @@
 #include "MTNativeKdmapi.h"
 
 #include <dlfcn.h>
+#include <unistd.h>
+#include <climits>
+#include <cstdlib>
 #include <cstring>
 #include <cstdint>
 
@@ -26,23 +29,47 @@ NativeKdmapi::~NativeKdmapi() {
 bool NativeKdmapi::open(std::string* error) {
     close();
     last_error_.clear();
-    const char* candidates[] = {
-        "libOmniMIDI.so",
-        "/home/ced/Downloads/libOmniMIDI.so",
-        "/home/ced/Downloads/zugg/libOmniMIDI.so"
-    };
-    for (const char* candidate : candidates) {
-        library_ = dlopen(candidate, RTLD_NOW | RTLD_LOCAL);
+    library_path_.clear();
+    // search order: $MIDITRAIL_OMNIMIDI, next to the executable, then the system
+    // library path (LD_LIBRARY_PATH / ld.so.cache / /usr/lib64 ...)
+    std::vector<std::string> candidates;
+    if (const char* env = std::getenv("MIDITRAIL_OMNIMIDI"); env != nullptr && env[0] != '\0') {
+        candidates.push_back(env);
+    }
+    {
+        char exe[PATH_MAX] = {};
+        const ssize_t length = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+        if (length > 0) {
+            std::string dir(exe, static_cast<std::size_t>(length));
+            dir.resize(dir.find_last_of('/') + 1);
+            candidates.push_back(dir + "libOmniMIDI.so");
+        }
+    }
+    candidates.push_back("libOmniMIDI.so");
+    std::string tried;
+    for (const std::string& candidate : candidates) {
+        library_ = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (library_ != nullptr) break;
+        const char* reason = dlerror();
+        tried += "\n  " + candidate + ": " + (reason != nullptr ? reason : "not found");
     }
     if (library_ == nullptr) {
-        last_error_ = "libOmniMIDI.so was not found";
+        last_error_ = "libOmniMIDI.so was not found (set MIDITRAIL_OMNIMIDI or put it next to MIDITrailLinux)" + tried;
         if (error) *error = last_error_;
         return false;
     }
 
     const auto available = symbol<IsAvailableFn>(library_, "IsKDMAPIAvailable");
     const auto initialize = symbol<InitializeFn>(library_, "InitializeKDMAPIStream");
+    {
+        // the file actually loaded (also when it came from the system search path)
+        Dl_info info = {};
+        if (initialize != nullptr && dladdr(reinterpret_cast<void*>(initialize), &info) != 0
+            && info.dli_fname != nullptr) {
+            char resolved[PATH_MAX];
+            library_path_ = realpath(info.dli_fname, resolved) != nullptr ? resolved : info.dli_fname;
+        }
+    }
     send_direct_data_ = symbol<SendDirectDataFn>(library_, "SendDirectData");
     send_direct_long_data_ = symbol<SendDirectLongDataFn>(library_, "SendDirectLongData");
     if (initialize == nullptr || symbol<TerminateFn>(library_, "TerminateKDMAPIStream") == nullptr

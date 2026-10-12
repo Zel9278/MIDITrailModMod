@@ -110,6 +110,11 @@ unsigned long LinuxMidiOut::sent_event_count(int port) const {
     return 0;
 }
 
+std::string LinuxMidiOut::kdmapi_library_path() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    return kdmapi_.ready() ? kdmapi_.library_path() : std::string();
+}
+
 std::string LinuxMidiOut::last_error(int port) const {
     if (port < 0 || port >= kPortCount) return {};
     std::lock_guard<std::recursive_mutex> lock(mutex_);

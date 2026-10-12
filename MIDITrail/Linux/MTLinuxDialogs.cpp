@@ -493,6 +493,9 @@ void LinuxDX11Context::Impl::draw_midi_out_dialog() {
             ImGui::TextColored(ImVec4(1, 0.4f, 0.3f, 1), "%s", midi_out.last_error(port).c_str());
         }
     }
+    if (const std::string library = midi_out.kdmapi_library_path(); !library.empty()) {
+        ImGui::TextDisabled("KDMAPI: %s", library.c_str());
+    }
     if (midi_dlg.out_selected[0].find("Through") != std::string::npos) {
         ImGui::TextColored(ImVec4(1, 0.7f, 0.2f, 1), "MIDI Through is not a synthesizer and produces no audio.");
     }

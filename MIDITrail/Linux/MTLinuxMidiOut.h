@@ -40,6 +40,8 @@ public:
     void all_notes_off();
     unsigned long sent_event_count(int port) const;
     std::string last_error(int port) const;
+    // libOmniMIDI.so in use (empty while no port uses KDMAPI)
+    std::string kdmapi_library_path() const;
 
 private:
     struct Port {

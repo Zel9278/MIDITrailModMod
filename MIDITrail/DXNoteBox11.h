@@ -94,8 +94,9 @@ private:
 		std::uint32_t color;   // D3DCOLOR 0xAARRGGBB (RGB used; A byte = pitch-bend index)
 		float hidden;
 		float alpha;           // real note opacity 0..1 (from the colour's A byte) - ced 20260627
+		float layer;           // overlap order rank (track, then channel), see _CreateInstanceBuffer
 	};
-	static_assert(sizeof(DXNB11_INSTANCE) == 36, "DXNB11 instance layout must match the D3D11 input layout");
+	static_assert(sizeof(DXNB11_INSTANCE) == 40, "DXNB11 instance layout must match the D3D11 input layout");
 
 	MTNoteDesign m_NoteDesign;
 	SMNoteList m_NoteList;
@@ -122,6 +123,7 @@ private:
 	// instance buffer + culling arrays
 	std::vector<ID3D11Buffer*> m_InstanceVBs;
 	unsigned long m_AllNoteNum;
+	unsigned long m_LayerCount;      // distinct overlap layers (ranks 0..m_LayerCount-1)
 	unsigned long* m_pNoteStartTime;
 	unsigned long* m_pNoteMaxEndTime;
 	unsigned char* m_pNoteTrackNo;   // per-note source track (track color mode only; NULL otherwise)

@@ -118,6 +118,22 @@ if is_plat("linux") then
         end)
         add_links("dxvk_d3d11", "dxvk_dxgi", "vkd3d-utils", "vkd3d-shader")
         add_syslinks("vulkan", "dl", "pthread", "asound", "freetype", "fontconfig")
+        -- libraries placed next to the executable (the packaged build bundles DXVK Native)
+        add_rpathdirs("@loader_path")
+
+        -- deploy the resource folders next to the binary after a build, only when they
+        -- do not exist yet (never overwrites a user-customized conf/data), as on Windows
+        after_build(function (target)
+            local outdir = target:targetdir()
+            for _, name in ipairs({"conf", "data", "doc"}) do
+                local src = path.join(os.projectdir(), "Resources", name)
+                local dst = path.join(outdir, name)
+                if not os.isdir(dst) and os.isdir(src) then
+                    os.cp(src, outdir)
+                    print("[deploy] copied Resources/%s -> %s", name, dst)
+                end
+            end
+        end)
 else
 
 -- ImGui from xrepo with the DX11 + Win32 backends (no in-tree imgui sources)

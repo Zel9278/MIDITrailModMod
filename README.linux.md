@@ -54,6 +54,20 @@ xmake f -m release --dxvk_native_root=$PWD/build/deps/dxvk-native/usr
 
 その他の依存パッケージ(Fedora): `SDL3-devel`, `libvkd3d-utils-devel`, `libvkd3d-shader-devel`, `vulkan-loader-devel`, `alsa-lib-devel`, `freetype-devel`, `fontconfig-devel`。動画書き出しには `ffmpeg` が必要。
 
+## CI / 配布パッケージ
+
+GitHub Actions(`.github/workflows/build.yml` の `build-linux`)が Fedora 44 のコンテナで `.github/scripts/build-linux.sh` を実行して、`MIDITrail-mod_mod-linux-x86_64.tar.gz` を作る。
+`mod_mod/main` では Windows 版と同じリリースに添付され、それ以外のブランチではワークフローの artifact に残る。
+
+パッケージには DXVK Native と vkd3d のライブラリが同梱されていて、実行ファイルの横から読み込まれる(RUNPATH `$ORIGIN`)。
+SDL3、Vulkan、ALSA、FreeType、fontconfig はシステムのものを使う。Fedora 44 でビルドしているので、glibc と SDL3 がそれと同程度に新しいディストリビューションが必要。
+
+同じビルドは手元でも再現できる。
+
+```sh
+podman run --rm -v "$PWD:/src:Z" -w /src fedora:44 .github/scripts/build-linux.sh
+```
+
 ## 起動
 
 ```sh
@@ -65,6 +79,12 @@ xmake f -m release --dxvk_native_root=$PWD/build/deps/dxvk-native/usr
 - `-d`: SMF の解析結果を `<file>.dump.txt` に出力する
 
 テスト用に `--autoplay`(`-p` と同じ)と `--smoke-frames N`(N フレーム描画して終了する。多重起動チェックはしない)も使える。
+
+KDMAPI(OmniMIDI)の `libOmniMIDI.so` は、次の順で探して最初に見つかったものを使う。実際に読み込んだファイルは MIDI OUT 設定画面に表示される。
+
+1. 環境変数 `MIDITRAIL_OMNIMIDI` で指定したパス
+2. `MIDITrailLinux` と同じフォルダの `libOmniMIDI.so`
+3. システムのライブラリ検索パス(`LD_LIBRARY_PATH`、`ld.so.cache`、`/usr/lib64` など)
 
 VAAPI のデバイスは既定で `/dev/dri/renderD128` を使う。環境変数 `MIDITRAIL_VAAPI_DEVICE` で変更できる。
 
