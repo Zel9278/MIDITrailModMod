@@ -60,6 +60,31 @@ build MIDITrail.sln. ImGui is fetched from the package manager automatically.
 　→1080p 以下は 2 倍の解像度で描いて ffmpeg で縮小しているが、文字だけ等倍で描いていたため
 　　縮小後に半分の大きさになっていた。縮小倍率の分だけ大きく描くようにした。
 
+[English]
+- [NEW] Native Linux build, MIDITrailLinux. The Direct3D 11 renderer is unchanged and runs on
+  Vulkan through DXVK Native. It uses the same play-state handling, scene setup and conf files
+  as the Windows build; only the platform layer is replaced:
+    - window / keyboard / mouse / gamepad: SDL3 (XInput is emulated with SDL3 gamepads)
+    - dialogs: ImGui (color, graphic, MIDI OUT A-F, MIDI IN, window size, video export,
+      How to view, About)
+    - MIDI OUT: ALSA sequencer or KDMAPI (libOmniMIDI.so), routed to ports A-F by SMF port
+    - MIDI IN: ALSA (live monitor, MIDITHRU)
+    - video export: ffmpeg pipe (the AMF entries use VAAPI instead), 360-degree export
+    - folder playback, add file, drag & drop, command line -p -q -d, single instance
+    - MIDI files are loaded with the same SMFileReader as on Windows
+  User settings are stored in ~/.config/MIDITrail/yknk/MIDITrail/. RCP files (rcpcv.dll) are
+  not supported. See README.linux.md for details.
+- [NEW] The release now includes a Linux package (MIDITrail-mod_mod-linux-x86_64.tar.gz),
+  built by GitHub Actions in a Fedora 44 container with DXVK Native and vkd3d bundled.
+- [FIX] Piano roll overlap order is now fixed: a higher track is always drawn on top (Windows too).
+  With ChStep close to 0 (e.g. the 2D scene) overlapping notes were ordered by depth rounding
+  noise and flickered in blocks and stripes. When the channel planes are closer together than
+  a note is thick, the notes now share one plane and are stacked by track (then channel) with
+  a tiny depth offset. Sounding notes are always drawn on top.
+- [FIX] Video export: the counter and other text came out smaller than on screen (Windows too).
+  Up to 1080p the frame is rendered at 2x and downscaled by ffmpeg, but the text was drawn at
+  1x, so it ended up half size. It is now drawn larger by the downscale factor.
+
 ────────────────────────────────────────────────────────
 改造点 20260713：歌詞表示を View メニューから ON/OFF できるようにした
 
