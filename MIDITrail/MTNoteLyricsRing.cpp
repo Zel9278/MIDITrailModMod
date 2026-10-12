@@ -9,7 +9,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "MTNoteLyricsRing.h"
 #include "MTNoteDesignRingMod.h"

@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "DXColorUtil.h"
 #include "MTConfFile.h"
 #include "MTPianoKeyboardDesignMod.h"

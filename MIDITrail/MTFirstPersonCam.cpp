@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "mmsystem.h"
 #include "YNBaseLib.h"
 #include "MTParam.h"

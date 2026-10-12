@@ -30,6 +30,7 @@
 #undef NULL
 #define NULL nullptr
 #endif
+#include "Linux/MTLinuxD3DBlob.h"
 
 #ifndef MIDITRAIL_LINUX_NATIVE
 using namespace YNBaseLib;
@@ -45,30 +46,6 @@ static HRESULT MTCompileShader(const void* data, SIZE_T data_size, const char* f
 		defines, include, entrypoint, target, flags, effect_flags, shader, errors);
 }
 
-using MTBlobGetBufferPointer = void* (__attribute__((ms_abi)) *)(ID3DBlob*);
-using MTBlobGetBufferSize = SIZE_T (__attribute__((ms_abi)) *)(ID3DBlob*);
-using MTBlobRelease = ULONG (__attribute__((ms_abi)) *)(ID3DBlob*);
-
-static void* MTGetBlobBufferPointer(ID3DBlob* blob)
-{
-	if (blob == NULL) return NULL;
-	void** vtable = *reinterpret_cast<void***>(blob);
-	return reinterpret_cast<MTBlobGetBufferPointer>(vtable[3])(blob);
-}
-
-static SIZE_T MTGetBlobBufferSize(ID3DBlob* blob)
-{
-	if (blob == NULL) return 0;
-	void** vtable = *reinterpret_cast<void***>(blob);
-	return reinterpret_cast<MTBlobGetBufferSize>(vtable[4])(blob);
-}
-
-static ULONG MTReleaseBlob(ID3DBlob* blob)
-{
-	if (blob == NULL) return 0;
-	void** vtable = *reinterpret_cast<void***>(blob);
-	return reinterpret_cast<MTBlobRelease>(vtable[2])(blob);
-}
 #define D3DCompile MTCompileShader
 #endif
 
@@ -176,10 +153,10 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 	if (FAILED(hr) || (pPSBlob == NULL)) { result = YN_SET_ERR("Shader compile error.", hr, 0); goto EXIT; }
 
 	hr = pDevice->CreateVertexShader(
-		MTGetBlobBufferPointer(pVSBlob), MTGetBlobBufferSize(pVSBlob), NULL, &s_pVS);
+		MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), NULL, &s_pVS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	hr = pDevice->CreatePixelShader(
-		MTGetBlobBufferPointer(pPSBlob), MTGetBlobBufferSize(pPSBlob), NULL, &s_pPS);
+		MTGetD3DBlobBufferPointer(pPSBlob), MTGetD3DBlobBufferSize(pPSBlob), NULL, &s_pPS);
 	if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 
 	{
@@ -190,7 +167,7 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 28, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 		};
 		hr = pDevice->CreateInputLayout(il, 4,
-			MTGetBlobBufferPointer(pVSBlob), MTGetBlobBufferSize(pVSBlob), &s_pLayout);
+			MTGetD3DBlobBufferPointer(pVSBlob), MTGetD3DBlobBufferSize(pVSBlob), &s_pLayout);
 		if (FAILED(hr)) { result = YN_SET_ERR("DirectX API error.", hr, 0); goto EXIT; }
 	}
 
@@ -268,13 +245,13 @@ int DXPrimitive11::InitPipeline(ID3D11Device* pDevice)
 
 EXIT:;
 #ifdef MIDITRAIL_LINUX_NATIVE
-	if (pVSBlob != NULL) MTReleaseBlob(pVSBlob);
-	if (pPSBlob != NULL) MTReleaseBlob(pPSBlob);
-	if (pErr != NULL) MTReleaseBlob(pErr);
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 #else
-	if (pVSBlob != NULL) MTReleaseBlob(pVSBlob);
-	if (pPSBlob != NULL) MTReleaseBlob(pPSBlob);
-	if (pErr != NULL) MTReleaseBlob(pErr);
+	if (pVSBlob != NULL) MTReleaseD3DBlob(pVSBlob);
+	if (pPSBlob != NULL) MTReleaseD3DBlob(pPSBlob);
+	if (pErr != NULL) MTReleaseD3DBlob(pErr);
 #endif
 	if (result != 0) ReleasePipeline();
 	return result;

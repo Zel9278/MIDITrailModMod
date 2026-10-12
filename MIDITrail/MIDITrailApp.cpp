@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "imagehlp.h"
 #include "shellapi.h"
 #include "ShObjIdl.h"   // IFileOpenDialog (folder select) - 1.4.1 feature port

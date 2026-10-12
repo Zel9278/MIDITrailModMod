@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "DXColorUtil.h"
 #include <stdio.h>  //for _stprintf_s
 

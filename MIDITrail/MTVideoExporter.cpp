@@ -4,7 +4,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "MTVideoExporter.h"
 #include <stdio.h>
 #include <map>

@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNErrCtrl.h"
 #include "YNPathUtil.h"
 #include <stdlib.h>

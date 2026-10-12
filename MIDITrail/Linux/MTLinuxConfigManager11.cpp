@@ -1,4 +1,4 @@
-#include "../StdAfx.h"
+#include "../stdafx.h"
 #include "../MTConfigManager11.h"
 #include "../../YNBaseLib/YNPathUtil.h"
 

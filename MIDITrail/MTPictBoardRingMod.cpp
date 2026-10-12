@@ -8,7 +8,7 @@
 //
 //******************************************************************************
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "MTPictBoardRingMod.h"
 #include "MTNoteRippleMod.h"
 #include "MTNoteLyrics.h"

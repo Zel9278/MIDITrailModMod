@@ -18,7 +18,7 @@
 // を書き換える方式に切り替えた。
 // もっとエレガントな方法があるかもしれない・・・。
 
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "YNBaseLib.h"
 #include "MTParam.h"
 #include "MTConfFile.h"
